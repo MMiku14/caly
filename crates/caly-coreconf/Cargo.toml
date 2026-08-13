@@ -1,0 +1,27 @@
+[package]
+name = "caly-coreconf"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[package.metadata.caly]
+# docs/crate-replan.md v4:层序坐标;依赖只允许 高 layer -> 低 layer。
+axis = "role"
+layer = 2
+
+[dependencies]
+caly-domain.workspace = true
+caly-dns.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+# Renderer node fixtures are built through the intake URI parser (relocated
+# to caly-subscription in P6); the edge is test-only, no cycle.
+caly-subscription.workspace = true
+
+[lints]
+workspace = true

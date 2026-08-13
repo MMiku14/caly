@@ -1,0 +1,22 @@
+[package]
+name = "caly-template-worker"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+publish = false
+
+[package.metadata.caly]
+# docs/crate-replan.md v4:bins 位于依赖图顶端,只消费不被依赖。
+axis = "role"
+layer = 6
+
+[dependencies]
+caly-domain.workspace = true
+caly-template.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

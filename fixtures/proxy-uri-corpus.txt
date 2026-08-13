@@ -1,0 +1,29 @@
+# Real-world proxy URI corpus (#80). One record per line:
+#   ok <uri>    — the subscription parser must accept it
+#   err <uri>   — the parser must reject it (any error, but loudly)
+# Blank lines and # comments are ignored by the consuming test.
+
+# --- vmess: base64-encoded JSON documents (share/subscription shape) ---
+ok vmess://eyJ2IjogIjIiLCAicHMiOiAi5pel5pysLeS8mOWMli1HUFQiLCAiYWRkIjogImpwMS5leGFtcGxlLmNvbSIsICJwb3J0IjogIjE2NjE3IiwgImlkIjogIjAzZWMzNGE3LWE5NWItNDY0Ni05OWI2LTg5NTdjNTMwYWRkMSIsICJhaWQiOiAiMCIsICJzY3kiOiAiemVybyIsICJuZXQiOiAid3MiLCAidHlwZSI6ICJub25lIiwgImhvc3QiOiAiY2RuLmV4YW1wbGUuY29tIiwgInBhdGgiOiAiL3dzIiwgInRscyI6ICJ0bHMiLCAic25pIjogImNkbi5leGFtcGxlLmNvbSIsICJhbHBuIjogImgyLGh0dHAvMS4xIn0=
+ok vmess://eyJhZGQiOiAiMTAuMC4wLjEiLCAicG9ydCI6IDQ0MywgImlkIjogIjAzZWMzNGE3LWE5NWItNDY0Ni05OWI2LTg5NTdjNTMwYWRkMSJ9
+ok vmess://eyJwcyI6ICLpppnmuK/wn4et8J+HsCDkvJjljJYiLCAiYWRkIjogImhrLmV4YW1wbGUuY29tIiwgInBvcnQiOiAiODQ0MyIsICJpZCI6ICIwM2VjMzRhNy1hOTViLTQ2NDYtOTliNi04OTU3YzUzMGFkZDEiLCAiYWlkIjogNCwgIm5ldCI6ICJ0Y3AiLCAidGxzIjogIiJ9
+
+# --- shadowsocks: SIP002 userinfo, legacy whole-link, raw userinfo ---
+ok ss://YWVzLTI1Ni1nY206U3RyMG5nLVBAc3N3MHJk@sg2.example.net:8388#%E6%96%B0%E5%8A%A0%E5%9D%A1-%E4%BC%98%E5%8C%96
+ok ss://Y2hhY2hhMjAtaWV0Zi1wb2x5MTMwNTpodW50ZXIyQDE2My4xODkuMjIuODoxMDk5OA==#%E7%BE%8E%E5%9B%BD
+ok ss://aes-128-gcm:simple-pass@t.cnmjcn.cyou:16641#%E5%8A%A0%E6%8B%BF%E5%A4%A7-%E4%BC%98%E5%8C%962
+
+# --- URL-shaped schemes: trojan / vless incl. #64 early-data params ---
+ok trojan://sup3r-secret-token@de1.example.org:443?sni=cdn.example.org&allowInsecure=0#%E5%BE%B7%E5%9B%BD-%E4%BC%98%E5%8C%96
+ok vless://03ec34a7-a95b-4646-99b6-8957c530add1@uk.example.org:443?security=tls&type=ws&path=%2Fray&host=edge.example.org&ed=2048&eh=Sec-WebSocket-Protocol#uk-ws
+ok vless://03ec34a7-a95b-4646-99b6-8957c530add1@uk2.example.org:8443?security=none&type=ws&ed=0#uk-ws-noed
+
+# --- corpus of broken inputs every real-world fetch eventually sees ---
+err vmess://###!!!not-base64!!!###
+err vmess://dGhpcyBpcyBub3QganNvbiBhdCBhbGw=
+err vmess://eyJhZGQiOiAib25seS1hLWhvc3QuZXhhbXBsZS5jb20ifQ==
+err ss://%%%broken%%%
+err ss://bm8tYXQtc2lnbi1hbnl3aGVyZQ==
+err ss://
+err trojan://@uk.example.org:443
+err unknown-scheme://user@host.example.com:443

@@ -1,0 +1,1 @@
+{"password":"secret-pass","server":"example.com","server_port":443,"tag":"proxy-73c846f55a5e5a4e7ac2f0e63ddab88e","tls":{"enabled":true,"server_name":"example.com"},"transport":{"path":"/stream","type":"ws"},"type":"trojan"}

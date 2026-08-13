@@ -1,0 +1,26 @@
+# Provider-name fuzz corpus (#80, mirrors audit #22): every non-comment
+# line must be REJECTED by caly_domain::is_path_safe_component.
+
+..
+.
+../etc/passwd
+..\windows\system32
+a/b
+a\b
+%2e%2e
+..%2f..%2fetc
+a:b
+*
+?
+a b
+trail 
+ lead
+a.c
+~
+$HOME
+日本-优化
+name with tab
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+${IFS}
+con:.yaml
+pwn.yaml/..

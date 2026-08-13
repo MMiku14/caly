@@ -1,0 +1,22 @@
+[package]
+name = "caly-platform"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[package.metadata.caly]
+# docs/crate-replan.md v4:层序坐标;依赖只允许 高 layer -> 低 layer。
+axis = "capability"
+layer = 1
+
+[dependencies]
+caly-domain.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

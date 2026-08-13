@@ -1,0 +1,5 @@
+RULES=[{"domain":["a.example"],"outbound":"PROXY"},{"domain_suffix":["b.example"],"outbound":"direct"},{"domain_keyword":["ads"],"outbound":"block"},{"ip_cidr":["192.168.0.0/16"],"outbound":"direct"}]
+RULE_SETS=-
+FINAL=PROXY
+BLOCK=true
+SKIPPED=3

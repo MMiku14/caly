@@ -1,0 +1,36 @@
+[package]
+name = "caly-backends"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[package.metadata.caly]
+# docs/crate-replan.md v4:层序坐标;依赖只允许 高 layer -> 低 layer。
+axis = "role"
+layer = 3
+
+[dependencies]
+caly-domain.workspace = true
+caly-dns.workspace = true
+caly-ports.workspace = true
+caly-corectl.workspace = true
+caly-coreconf.workspace = true
+caly-profile.workspace = true
+caly-subscription.workspace = true
+serde_json.workspace = true
+caly-platform.workspace = true
+caly-template.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+url.workspace = true
+sha2.workspace = true
+
+[dev-dependencies]
+# Render-compose fusion tests build node fixtures with base64 userinfo.
+base64.workspace = true
+
+[lints]
+workspace = true

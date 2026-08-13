@@ -1,0 +1,5 @@
+RULES=[{"domain_suffix":["google.com"],"outbound":"PROXY"}]
+RULE_SETS=-
+FINAL=GLOBAL
+BLOCK=false
+SKIPPED=0

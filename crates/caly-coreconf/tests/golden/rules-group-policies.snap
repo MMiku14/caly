@@ -1,0 +1,5 @@
+RULES=[{"domain_suffix":["a.example"],"outbound":"MyGroup"},{"domain_suffix":["b.example"],"outbound":"GLOBAL"},{"domain_suffix":["c.example"],"outbound":"PROXY"}]
+RULE_SETS=-
+FINAL=PROXY
+BLOCK=false
+SKIPPED=0

@@ -1,0 +1,1 @@
+{"server":"example.com","server_port":443,"tag":"proxy-47a81ff18ad7be8f66e4ec36739bd9e8","tls":{"enabled":true,"insecure":true,"server_name":"example.com"},"type":"vless","uuid":"a5ea9247-79f3-4655-aece-3fb51e1e669e"}

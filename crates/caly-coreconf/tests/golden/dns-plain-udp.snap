@@ -1,0 +1,1 @@
+{"dns":{"final":"nameserver-0","servers":[{"server":"8.8.8.8","tag":"nameserver-0","type":"udp"}]},"experimental":{"clash_api":{"external_controller":"127.0.0.1:9091"}},"inbounds":[],"log":{"level":"error"},"outbounds":[{"tag":"direct","type":"direct"}],"route":{"default_domain_resolver":"nameserver-0","final":"direct"}}

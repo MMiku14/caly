@@ -1,0 +1,1 @@
+{"interval":"600s","outbounds":["proxy-1"],"tag":"urltest","tolerance":200,"type":"urltest","url":"https://cp.cloudflare.com/"}

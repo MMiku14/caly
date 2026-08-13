@@ -1,0 +1,20 @@
+[Unit]
+Description=caly daemon (Mihomo/sing-box manager)
+Documentation=file:///usr/local/share/doc/caly/README.md
+# The daemon itself needs no network privileges; TUN effects are applied
+# through the configured escalation (pkexec/sudo) and the core binaries
+# carry CAP_NET_ADMIN after `caly doctor --fix`.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/caly daemon
+Restart=on-failure
+RestartSec=3
+# The daemon writes sockets/state under the user's XDG runtime/state dirs;
+# keep the service environment clean and predictable.
+Environment=XDG_RUNTIME_DIR=%t
+
+[Install]
+WantedBy=default.target

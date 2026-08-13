@@ -1,0 +1,30 @@
+[package]
+name = "caly-profile"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[package.metadata.caly]
+# docs/crate-replan.md v4:层序坐标;依赖只允许 高 layer -> 低 layer。
+axis = "role"
+layer = 2
+
+[dependencies]
+caly-domain.workspace = true
+caly-dns.workspace = true
+caly-platform.workspace = true
+# P6: intake/fetch lives in caly-subscription; reqwest left with it (#75).
+caly-subscription.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_norway.workspace = true
+url.workspace = true
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

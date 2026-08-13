@@ -1,0 +1,17 @@
+# Rust
+/target
+**/*.rs.bk
+
+# Kernels (fetched by scripts/fetch-test-kernels.sh)
+/vendor
+
+# Logs / local state
+*.log
+t1.log
+t2.log
+
+# Editors / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/

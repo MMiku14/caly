@@ -1,0 +1,1 @@
+{"interval":"300s","outbounds":["proxy-1","direct"],"tag":"fallback","tolerance":50,"type":"urltest","url":"https://www.gstatic.com/generate_204"}

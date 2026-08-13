@@ -1,0 +1,1 @@
+{"method":"chacha20-ietf-poly1305","password":"secretpass","server":"example.com","server_port":8443,"tag":"proxy-4d16be8b6313dd6c2e5cf9b8305a771d","type":"shadowsocks"}

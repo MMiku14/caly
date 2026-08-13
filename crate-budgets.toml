@@ -1,0 +1,162 @@
+# caly crate 预算闸门(docs/crate-replan.md v4 §8 的权威落盘)
+#
+# 规则:
+#   - max_loc:crate src/ 下 .rs 总行数上限(含 src 内测试模块,不含 tests/ 目录)。
+#   - max_dependents:workspace 内直接依赖它的 manifest 数上限(含 dev-deps 声明)。
+#   - 基线 = 2026-08-10 实测值 + ~5% 余量;每期出口按计划收紧并在此注释留档。
+#   - 调高上限必须改本文件并附理由;口头豁免无效(脚本 check-crate-budgets.py 强制)。
+#
+# 收紧计划(docs/crate-replan.md §8;完成一期即改值):
+#   P1a 已完成:caly-kernel → caly-corectl。P1b 后 caly-profile → caly-profile。
+#   P2 后 profile ≤ 13200(template 拆出)。
+#   P3a 已完成(实测):coreconf 4129 → 上限 4350(规划估值 3100 偏低:
+#   渲染件连同随迁 golden 测试行一起计数,上限按实测 +5% 定);corectl
+#   2516 → 2650;profile 9881 → 10400;backends 7701 → 8100(收容
+#   render_compose 融合层,P7 composition 抽离时再评估)。
+#   P3b 已完成(实测):coreconf typed model 化 4498 → 4725(见下条注释)。
+#   P4 已完成(实测):新增 caly-dns ≤2200(§8 出生线;收容 domain DNS 三
+#   文件+platform probe+wire);domain 5526→4866(搬迁出账,收紧 5900→5110);
+#   platform 4953→4539(摘除 dns_probe,收紧 5300→4770)。domain dependents
+#   上限 13→14(caly-dns老将依赖 domain 的 Bounded* 原语,出生即记账)。
+#   P6 已完成(实测):新增 caly-subscription ≤4100(§8 出生线;纯 intake+
+#   net,实收 subscription 十四件+net.rs,3221 行);reqwest 白名单换标,
+#   profile 摘除 reqwest/base64/percent-encoding,9824→6696 收紧
+#   10400→7050(#75 注释改写落盘)。
+#   P4 新增 caly-dns ≤ 2200;_P6 后 profile ≤ 7500、新增 caly-subscription
+#   ≤ 4100;P7 后 application ≤ 7000、新增 caly-composition ≤ 2800。
+#   P7 已完成(实测):新增 caly-composition 4170(§8 出生线 2800 系规划期
+#   估值,子树各期已长至 3971 行含随迁测试,上限按实测 +5% 定);
+#   application 抽离出账 3978 行并回迁 WallClock 一行簇,9299→5317,
+#   收紧 9800→5590;两个协调 cell 上移 ports(356 行,400 上限内);
+#   backends 摘除 desired.rs(7654 行,8100 上限内)。
+
+[external-policy]
+# 决策 #75:reqwest 是 WAN 边界,只允许出现在白名单 crate。
+# P6 已完成:白名单自 caly-profile 换标至 caly-subscription。
+reqwest = ["caly-subscription"]
+# Q2(2026-08-11,cli-v3-design.md §13-1 / D18 第 2 步):dialoguer 是
+# W2 交互选择器,只允许出现在 bins/caly;构建障碍回退自研 prompt。
+dialoguer = ["caly"]
+# 2026-08-13 第七轮:live picker(`node select` 无参)手写后直接依赖
+# console(渲染/raw mode)与 crossterm(超时按键),均只允许 bins/caly;
+# 回退面:console 是 dialoguer 的既有传递依赖(零新增),crossterm 的
+# poll 可换回 console read_key(失去超时重绘,功能项进度降级为按键刷新)。
+console = ["caly"]
+crossterm = ["caly"]
+# W2-β2a(Q5):url crate 自 P 期即为 schema/fetch/backends 的存量
+# 依赖;β2a 起 bins/caly 也用它把 `sub add` 文件源落成合法 file://
+# URI(`Url::from_file_path`)。白名单 = 现存的 4 个消费点,不外溢。
+url = ["caly", "caly-backends", "caly-profile", "caly-subscription"]
+
+[budgets.caly-domain]
+# P4 收容出账:dns/dns_filter/nameserver 三文件(650 行)迁入 caly-dns;
+# 残留即纯领域语言,4866 + ~5% → 5110。dependents +1(caly-dns 出生),
+# P6 再 +1(caly-subscription 出生)→ 15。P7 再 +1(caly-composition 出生)→ 16。
+max_loc = 5110
+max_dependents = 16
+
+[budgets.caly-ports]
+# 两个协调 cell(时序/回迁)上移后随服务层 trait 扩展;实测 439 + ~5% → 465。
+max_loc = 465
+max_dependents = 3
+
+[budgets.caly-platform]
+# P4 摘除 dns_probe(迁入 caly-dns;UDP probe 归 capability crate,M12);
+# 4539 + ~5% → 4770。后续系统代理/平台能力面扩展,实测 4864 + ~5% → 5110。
+max_loc = 5110
+max_dependents = 8
+
+[budgets.caly-corectl]
+# P1a 已改名(原 caly-kernel);P3a 渲染半边迁 caly-coreconf 后收紧(4100 → 2650)。
+# 双内核(mihomo/sing-box)控制面端点扩展,实测 2939 + ~5% → 3090。
+max_loc = 3090
+max_dependents = 4
+
+[budgets.caly-dns]
+# P4 出生线(docs/crate-replan.md §8 表):caly-dns ≤ 2200。收容 domain DNS
+# 三文件 + platform probe/wire;结构化 Nameserver 落地(kind/address/path
+# 视图,解析 total 且与渲染历史 cut 规则逐字节同构)。实测 1262。
+max_loc = 2200
+max_dependents = 6
+
+[budgets.caly-coreconf]
+# P3a 新增:纯渲染 crate(deps 仅 caly-domain + serde/serde_json;dev-dep
+# caly-profile 仅供节点 fixture 的 intake 解析,无环)。实测 4129 行(含
+# 随迁 golden 测试)+ ~5% 余量。
+# P3b typed model 化:serde struct 取代 json!/format! 缝合,字段声明、
+# skip 闸门与文档注释比宏调用更冗长,实测 4498 行 + ~5% 余量 → 4725。
+# typed model 化后继续迭代(schema golden 测试随迁),实测 5012 + ~5% → 5265。
+max_loc = 5265
+max_dependents = 4
+
+[budgets.caly-profile]
+# P1b 改名(原 caly-config);P2 拆出 caly-template(14100 → 13200);
+# P3a 渲染件迁 caly-coreconf 后再收紧(→ 10400)。
+# P6 订阅 intake+net 迁 caly-subscription(回款 3325 行;reqwest 出账):
+# 6696 + ~5% → 7050。
+max_loc = 7050
+max_dependents = 5
+
+[budgets.caly-subscription]
+# P6 出生线(docs/crate-replan.md §8 表):caly-subscription ≤ 4100。
+# 收容 subscription 目录 14 件(intake/fetch/parse/transform)+ net.rs
+# (SSRF 安全解析,与 intake 本就是闭环),实测 3221;fixture_corpus 集成
+# 测试随迁 tests/。reqwest 白名单持有者(#75 换标)。
+max_loc = 4100
+max_dependents = 5
+
+[budgets.caly-backends]
+# P3a 收容 subscription 渲染融合层 render_compose(自 caly-profile 迁入)
+# 及其随迁融合测试:7600 → 8100;P7 composition 抽离时复评。
+# P7 复评完成:composition 抽离发生在 application 侧,backends 子树未受
+# 影响;同期多内核控制适配与订阅缓存后端子项持续扩展,实测 9501 +
+# ~5% → 9980。与 bins/caly 同列拆分候选(crate-replan §5.7),拆分前
+# 上限按惯例校准。
+max_loc = 9980
+max_dependents = 4
+
+[budgets.caly-application]
+# P7 composition 抽离出账(3978 行迁 caly-composition;WallClock 受 orphan
+# 规则锚定回迁 service/shared.rs,+20 行):5317 + ~5% → 5590。
+# dependents 含 caly-composition(出生即依赖组装件)、server、bins/caly。
+# P7 后新子项(operations 生命周期 admission/cancellation、service 层
+# 补全)实测 5822,仍在 §8 计划上限 7000 内;按惯例 5822 + ~5% → 6115。
+max_loc = 6115
+max_dependents = 3
+
+[budgets.caly-composition]
+# P7 出生(§9):application 内嵌 composition/ 子树整树平移(3978 行,
+# 含 456 行随迁测试),WallClock 回迁后实测 3971 + ~5% → 4170。
+# dependents == 1(bins/caly 是唯一宿主,§6 决议)。
+# 出生后随 application 服务层接线增长,实测 4316 + ~5% → 4535。
+max_loc = 4535
+max_dependents = 1
+
+[budgets.caly-protocol]
+max_loc = 3100
+max_dependents = 4
+
+[budgets.caly-server]
+max_loc = 2400
+max_dependents = 2
+
+# bins 的键名即其 package name(crates/ 无同名目录时脚本落 bins/ 查找)。
+[budgets.caly]
+# bins/caly(CLI 单体;延后到 CLI v2 期处理,见 crate-replan.md §5.7)。
+# W1 出口(cli-v3-design.md):v3 语法树落地实测 24,914 行(余量仅 86,
+# 贴线)。W2(交互回退/自适应输出)与 W3a(entry_tree/树面)已排期,
+# 同 crate 消化,按惯例预估需求上调:24,914 + ~10% → 27,500;单体拆分
+# 仍另行其期(crate-replan §5.7)。
+# W2 出口(2026-08-11,α+β1+β2a+β2b 全收口):实测 27,354 行(余量仅
+# 146,贴线)。W3a 已排期增量面(entry_tree.rs 接线、`sub parse` 树化、
+# `--format=tree` 与 `t` 缩写、用户别名 aliases.yaml 加载/展开/校验、
+# `config diff --format=diff`、三 fixture 快照),预估 2.5k–3.5k 行,
+# 按 ~13% 上调至 31,000;W3a 出口复核实测再校准。
+# W3a 出口复核(2026-08-13):增量面实际落地超出预估(entry_tree.rs
+# 907、output.rs 783、cli_tests.rs 2242 等),实测 32,389,按惯例
+# 32,389 + ~5% → 34,000;单体拆分仍另行其期(crate-replan §5.7)。
+max_loc = 34000
+
+[budgets.caly-template-worker]
+# P2 后依赖脱 caly-profile,尺寸应降。
+max_loc = 120

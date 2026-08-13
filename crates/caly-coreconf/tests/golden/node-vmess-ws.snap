@@ -1,0 +1,1 @@
+{"alter_id":0,"security":"auto","server":"example.com","server_port":443,"tag":"proxy-c408db13c92ff6cd7aaea40859b49b5d","tls":{"enabled":true,"server_name":"example.com"},"transport":{"headers":{"Host":"example.com"},"path":"/s","type":"ws"},"type":"vmess","uuid":"6a89a215-22bf-4bd7-9642-b95b2e09583a"}

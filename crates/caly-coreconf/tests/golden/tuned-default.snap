@@ -1,0 +1,1 @@
+{"experimental":{"clash_api":{"external_controller":"127.0.0.1:9091"}},"inbounds":[],"log":{"level":"error"},"outbounds":[{"tag":"direct","type":"direct"}],"route":{"final":"direct"}}

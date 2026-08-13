@@ -1,0 +1,34 @@
+[package]
+name = "caly-composition"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[package.metadata.caly]
+# docs/crate-replan.md v4:层序坐标;依赖只允许 高 layer -> 低 layer。
+# P7 出生(§9):组装根,build 期接线,职责终于 listen 之前;bins/caly
+# 是唯一宿主(§6 决议;server 经 ApplicationServicePort 泛型消费)。
+axis = "role"
+layer = 4
+
+[dependencies]
+caly-application.workspace = true
+caly-backends.workspace = true
+caly-coreconf.workspace = true
+caly-corectl.workspace = true
+caly-dns.workspace = true
+caly-domain.workspace = true
+caly-platform.workspace = true
+caly-ports.workspace = true
+caly-profile.workspace = true
+caly-subscription.workspace = true
+async-trait.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,51 @@
+[package]
+name = "caly"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[package.metadata.caly]
+# docs/crate-replan.md v4:bins 位于依赖图顶端,只消费不被依赖。
+axis = "role"
+layer = 6
+
+[dependencies]
+caly-domain.workspace = true
+caly-dns.workspace = true
+caly-backends.workspace = true
+caly-corectl.workspace = true
+caly-profile.workspace = true
+caly-subscription.workspace = true
+percent-encoding.workspace = true
+caly-platform.workspace = true
+caly-application.workspace = true
+caly-composition.workspace = true
+caly-protocol.workspace = true
+caly-server.workspace = true
+crossterm.workspace = true
+tokio.workspace = true
+sha2.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+clap.workspace = true
+clap_complete.workspace = true
+# Q2/D18 (2026-08-11): W2 interactive pickers — see the workspace
+# manifest comment for the 4-step bookkeeping.
+dialoguer.workspace = true
+console.workspace = true
+unicode-width.workspace = true
+# W2-β2a (Q5): file:// URL form for `sub add` local-file sources
+# (`Url::from_file_path` keeps the stored form a legal URI).
+url.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_norway.workspace = true
+
+[dev-dependencies]
+base64.workspace = true
+
+[lints]
+workspace = true

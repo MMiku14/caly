@@ -1,0 +1,5 @@
+RULES=-
+RULE_SETS=[{"rules":[{"ip_cidr":["1.2.3.0/24"]}],"tag":"geoip-cn","type":"inline"}]
+FINAL=PROXY
+BLOCK=false
+SKIPPED=1

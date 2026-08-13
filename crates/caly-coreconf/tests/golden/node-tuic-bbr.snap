@@ -1,0 +1,1 @@
+{"congestion_control":"bbr","password":"hello","server":"example.com","server_port":443,"tag":"proxy-8529639a66b3c2870f35099a5192654c","tls":{"enabled":true,"server_name":"example.com"},"type":"tuic","uuid":"2DD61D93-75D8-4DA4-AC0E-6AECE7EAC365"}

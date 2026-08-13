@@ -1,0 +1,1 @@
+{"down_mbps":100,"obfs":{"password":"obfspass","type":"salamander"},"password":"secret","server":"example.com","server_port":443,"tag":"proxy-9e818c78278e016d284abe2a40ec311c","tls":{"enabled":true,"server_name":"example.com"},"type":"hysteria2","up_mbps":50}

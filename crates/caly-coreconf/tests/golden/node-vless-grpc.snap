@@ -1,0 +1,1 @@
+{"server":"example.com","server_port":443,"tag":"proxy-086d29ce414fc669c9790d69a7e34638","tls":{"enabled":true,"server_name":"example.com"},"transport":{"service_name":"grpc-svc","type":"grpc"},"type":"vless","uuid":"a5ea9247-79f3-4655-aece-3fb51e1e669e"}

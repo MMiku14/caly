@@ -1,0 +1,140 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/caly-domain",
+  "crates/caly-ports",
+  "crates/caly-backends",
+  "crates/caly-corectl",
+  "crates/caly-coreconf",
+  "crates/caly-dns",
+  "crates/caly-subscription",
+  "crates/caly-profile",
+  "crates/caly-platform",
+  "crates/caly-application",
+  "crates/caly-composition",
+  "crates/caly-protocol",
+  "crates/caly-server",
+  "crates/caly-template",
+  "bins/caly",
+  "bins/caly-template-worker",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+authors = ["MMiku14"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/MMiku14/Caly"
+description = "caly — a daemon-first terminal dashboard for proxy cores"
+
+[workspace.dependencies]
+caly-domain = { path = "crates/caly-domain" }
+caly-ports = { path = "crates/caly-ports" }
+caly-backends = { path = "crates/caly-backends" }
+caly-corectl = { path = "crates/caly-corectl" }
+caly-coreconf = { path = "crates/caly-coreconf" }
+caly-dns = { path = "crates/caly-dns" }
+caly-subscription = { path = "crates/caly-subscription" }
+caly-profile = { path = "crates/caly-profile" }
+caly-platform = { path = "crates/caly-platform" }
+caly-application = { path = "crates/caly-application" }
+caly-composition = { path = "crates/caly-composition" }
+caly-protocol = { path = "crates/caly-protocol" }
+caly-server = { path = "crates/caly-server" }
+caly-template = { path = "crates/caly-template" }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+clap = { version = "4", features = ["derive"] }
+clap_complete = "4"
+serde_norway = "0.9"
+crossterm = "0.29"
+base64 = "0.22"
+url = "2"
+percent-encoding = "2"
+# Decision #75: reqwest is the WAN boundary ONLY — remote subscription
+# fetching needs TLS + redirect policy (caly-profile/subscription/http.rs).
+# The loopback kernel control plane (caly-corectl mihomo/sing_box http.rs)
+# deliberately keeps its bounded, synchronous, std-only client; the boundary
+# is enforced by scripts/check-dependency-discipline.sh.
+reqwest = { version = "0.12", default-features = false, features = [
+  "rustls-tls",
+] }
+# Binary-size decision: `ring` is the single rustls crypto provider. The
+# default `aws_lc_rs` feature (via tokio-rustls' default features) dragged the
+# entire aws-lc-sys C library into both shipped binaries; reqwest's rustls
+# chain already enables `ring`, so pinning the same provider avoids shipping
+# two TLS crypto stacks. Do not re-enable `aws_lc_rs` without measuring.
+tokio-rustls = { version = "0.26", default-features = false, features = [
+  "logging",
+  "tls12",
+  "ring",
+] }
+rustls-pemfile = "2"
+# Q2 (2026-08-11, cli-v3-design.md §13-1 四步记账): dialoguer powers
+# the W2 interactive pickers (`node select` with no argument, `sub add`
+# naming). Step 1 = this comment; step 2 = crate-budgets.toml
+# [external-policy] registers `dialoguer = ["caly"]`; step 3 — the
+# workspace-wide `#![forbid(unsafe_code)]` governs only our own crates,
+# external deps are unaffected by it; step 4 — if the crate ever breaks
+# the build, roll back to an in-house prompt and record the swap in
+# docs/cli-v3-design.md. `fuzzy-select` (2026-08-12): pools above 10
+# entries switch to the type-to-search filter (`node pick` member
+# picker / long online `node select` lists).
+dialoguer = { version = "0.12", features = ["fuzzy-select"] }
+console = "0.16"
+# 2026-08-12 渲染重构: char_width 手工 EAW 区间表连续三轮 agent 审计出与
+# unicode-width 的差异(毯式 1F200-1FAFF 过宽、组合符归零不完整)。该 crate
+# 已是 console/dialoguer 的传递依赖(锁文件 0.2.2),显式声明零新增成本,
+# 把终端列宽计算交给生态事实标准(console/ratatui 同款)。
+unicode-width = "0.2"
+tokio = { version = "1", features = [
+  "rt-multi-thread",
+  "macros",
+  "net",
+  "sync",
+  "time",
+  "signal",
+  "io-util",
+] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+tokio-stream = { version = "0.1", features = ["sync", "net"] }
+async-trait = "0.1"
+sha2 = "0.10"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+# Public API documentation is restored incrementally as concrete backends land.
+# Keeping it warn/deny during the bootstrap phase hides functional diagnostics.
+missing_docs = "allow"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+too_many_arguments = "allow"
+result_large_err = "allow"
+needless_pass_by_value = "allow"
+doc_markdown = "allow"
+unnested_or_patterns = "allow"
+match_same_arms = "allow"
+
+# Size-first release profile (2026-08-10 round): fat LTO + z + strip took
+# caly 10.16 MiB -> 6.26 MiB and caly-template-worker ~5.9 MiB -> 341 KiB
+# P7 终审实测:caly 6.34 MiB(P6 出口同配置对照 6.33 MiB,+12 KiB 系
+# fat-LTO crate 边界扰动,非代码增长);worker 341 KiB 逐字节持平。
+# (together with the tera removal and the single ring TLS provider).
+[profile.release]
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+strip = true
+# `panic = "abort"` was rejected: bins/caly/src/doctor/checks.rs relies on
+# catch_unwind to isolate doctor checks, so unwinding must stay.
+panic = "unwind"

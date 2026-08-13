@@ -1,0 +1,5 @@
+RULES=[{"outbound":"PROXY","rule_set":"my-google"}]
+RULE_SETS=[{"behavior":"domain","download_interval":"24h","format":"source","tag":"my-google","type":"remote","url":"https://example.com/g.yaml"},{"format":"source","path":"/etc/caly/local.yaml","tag":"local","type":"local"},{"rules":[{"domain":["exact.example.com"]},{"domain_suffix":["suffix.example.org"]}],"tag":"inline","type":"inline"}]
+FINAL=PROXY
+BLOCK=false
+SKIPPED=0

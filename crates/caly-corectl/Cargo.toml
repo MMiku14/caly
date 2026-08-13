@@ -1,0 +1,30 @@
+[package]
+name = "caly-corectl"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[package.metadata.caly]
+# docs/crate-replan.md v4:层序坐标;依赖只允许 高 layer -> 低 layer。
+axis = "role"
+layer = 2
+
+[dependencies]
+caly-domain.workspace = true
+caly-platform.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+percent-encoding.workspace = true
+
+[dev-dependencies]
+# e2e fixtures build DnsSettings via the relocated capability crate.
+caly-dns.workspace = true
+# The real-kernel e2e tests still drive the renderers (P3a: they moved to
+# caly-coreconf); the dependency edge is test-only.
+caly-coreconf.workspace = true
+
+[lints]
+workspace = true

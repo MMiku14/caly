@@ -1,0 +1,31 @@
+[package]
+name = "caly-subscription"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[package.metadata.caly]
+# docs/crate-replan.md v4:层序坐标;依赖只允许 高 layer -> 低 layer。
+# reqwest 白名单持有者(#75;P6 自 caly-profile 换标至此)。
+axis = "capability"
+layer = 1
+
+[dependencies]
+caly-domain.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_norway.workspace = true
+base64.workspace = true
+url.workspace = true
+percent-encoding.workspace = true
+reqwest.workspace = true
+sha2.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+
+[lints]
+workspace = true

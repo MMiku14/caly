@@ -1,0 +1,5 @@
+RULES=[{"ip_cidr":["10.0.0.0/8"],"outbound":"direct"}]
+RULE_SETS=-
+FINAL=direct
+BLOCK=false
+SKIPPED=1
