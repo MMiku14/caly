@@ -2,11 +2,10 @@
 
 use core::num::NonZeroU16;
 
-use base64::{Engine as _, engine::general_purpose};
 use caly_domain::{
-    Credential, DialableNode, Endpoint, EndpointHost, NodeBuilder, NodeDisplayName, NodeSource,
-    Protocol, ShadowsocksCipher, ShadowsocksPlugin, SubscriptionId, TlsConfig, Transport,
-    TransportText, TransportTextList, VmessCipher, sanitized_display_name,
+    sanitized_display_name, Credential, DialableNode, Endpoint, EndpointHost, NodeBuilder,
+    NodeDisplayName, NodeSource, Protocol, ShadowsocksCipher, ShadowsocksPlugin, SubscriptionId,
+    TlsConfig, Transport, TransportText, TransportTextList, VmessCipher,
 };
 use serde_json::Value;
 use url::Url;
@@ -156,17 +155,9 @@ fn node_name(value: Option<String>, fallback: &str) -> Result<NodeDisplayName, U
 
 fn decode_base64_text(value: &str) -> Result<String, UriParseError> {
     let value = value.trim();
-    for engine in [
-        &general_purpose::STANDARD,
-        &general_purpose::STANDARD_NO_PAD,
-        &general_purpose::URL_SAFE,
-        &general_purpose::URL_SAFE_NO_PAD,
-    ] {
-        if let Ok(bytes) = engine.decode(value) {
-            return String::from_utf8(bytes).map_err(|_| UriParseError::InvalidUtf8);
-        }
-    }
-    Err(UriParseError::Base64Rejected)
+    let bytes =
+        crate::format::decode_base64_any(value.as_bytes()).ok_or(UriParseError::Base64Rejected)?;
+    String::from_utf8(bytes).map_err(|_| UriParseError::InvalidUtf8)
 }
 
 fn json_text(value: &Value, key: &'static str) -> Result<String, UriParseError> {

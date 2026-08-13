@@ -99,17 +99,18 @@ pub(crate) fn render_dns_object(dns: &DnsSettings) -> RenderedDns {
 /// Collects (group, index, nameserver) entries in a stable render order.
 fn collect_entries(dns: &DnsSettings) -> Vec<(String, usize, &Nameserver)> {
     let mut entries = Vec::new();
-    for (index, server) in dns.nameservers().iter().enumerate() {
-        entries.push(("nameserver".to_owned(), index, server));
-    }
-    for (index, server) in dns.fallback().iter().enumerate() {
-        entries.push(("fallback".to_owned(), index, server));
-    }
-    for (index, server) in dns.direct().iter().enumerate() {
-        entries.push(("direct".to_owned(), index, server));
-    }
-    for (index, server) in dns.default().iter().enumerate() {
-        entries.push(("default".to_owned(), index, server));
+    for (group, servers) in [
+        ("nameserver", dns.nameservers()),
+        ("fallback", dns.fallback()),
+        ("direct", dns.direct()),
+        ("default", dns.default()),
+    ] {
+        entries.extend(
+            servers
+                .iter()
+                .enumerate()
+                .map(|(index, server)| (group.to_owned(), index, server)),
+        );
     }
     entries
 }

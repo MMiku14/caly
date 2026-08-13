@@ -57,19 +57,14 @@ impl SharedPlatformBackend {
     pub(crate) fn restore_original_and_clear(
         &self,
     ) -> Result<caly_domain::PlatformEffectView, caly_ports::ActorFailure> {
-        let mut backend = self
-            .0
-            .lock()
-            .map_err(|_| platform_lock_failure("platform backend lock poisoned"))?;
+        let mut backend = lock_backend(&self.0, "platform backend lock poisoned")?;
         backend.restore_original_and_clear()
     }
 }
 
 fn platform_lock_failure(message: &'static str) -> caly_ports::ActorFailure {
-    // `message` is always a `&'static str` literal, but the infallible
-    // `clamped` constructor keeps the call site abort-free: the previous
-    // `unwrap_or_else(|_| std::process::abort())` form would have killed
-    // the daemon on the (theoretically unreachable) too-long path.
+    // `message` is always a `&'static str` literal; the infallible `clamped`
+    // constructor keeps the call site abort-free.
     caly_ports::ActorFailure::clamped(
         caly_ports::ActorFailureKind::Infrastructure,
         message,
@@ -77,15 +72,21 @@ fn platform_lock_failure(message: &'static str) -> caly_ports::ActorFailure {
     )
 }
 
+/// Locks a shared owner, mapping a poisoned mutex to an infrastructure
+/// failure with the site-specific message.
+fn lock_backend<'a, B>(
+    backend: &'a std::sync::Arc<std::sync::Mutex<B>>,
+    message: &'static str,
+) -> Result<std::sync::MutexGuard<'a, B>, caly_ports::ActorFailure> {
+    backend.lock().map_err(|_| platform_lock_failure(message))
+}
+
 impl caly_ports::PlatformCommandBackend for SharedPlatformBackend {
     fn set_system_proxy(
         &mut self,
         enabled: bool,
     ) -> Result<caly_domain::PlatformEffectView, caly_ports::ActorFailure> {
-        let mut backend = self
-            .0
-            .lock()
-            .map_err(|_| platform_lock_failure("platform backend lock poisoned"))?;
+        let mut backend = lock_backend(&self.0, "platform backend lock poisoned")?;
         caly_ports::PlatformCommandBackend::set_system_proxy(&mut *backend, enabled)
     }
 
@@ -93,10 +94,7 @@ impl caly_ports::PlatformCommandBackend for SharedPlatformBackend {
         &mut self,
         url: &str,
     ) -> Result<caly_domain::PlatformEffectView, caly_ports::ActorFailure> {
-        let mut backend = self
-            .0
-            .lock()
-            .map_err(|_| platform_lock_failure("platform backend lock poisoned"))?;
+        let mut backend = lock_backend(&self.0, "platform backend lock poisoned")?;
         caly_ports::PlatformCommandBackend::set_system_proxy_pac(&mut *backend, url)
     }
 }
@@ -123,10 +121,7 @@ impl SharedTunBackend {
     pub(crate) fn restore_and_clear(
         &self,
     ) -> Result<caly_domain::PlatformEffectView, caly_ports::ActorFailure> {
-        let mut backend = self
-            .0
-            .lock()
-            .map_err(|_| platform_lock_failure("TUN backend lock poisoned"))?;
+        let mut backend = lock_backend(&self.0, "TUN backend lock poisoned")?;
         backend.restore_and_clear()
     }
 }
@@ -136,10 +131,7 @@ impl caly_ports::TunCommandBackend for SharedTunBackend {
         &mut self,
         enabled: bool,
     ) -> Result<caly_domain::PlatformEffectView, caly_ports::ActorFailure> {
-        let mut backend = self
-            .0
-            .lock()
-            .map_err(|_| platform_lock_failure("TUN backend lock poisoned"))?;
+        let mut backend = lock_backend(&self.0, "TUN backend lock poisoned")?;
         caly_ports::TunCommandBackend::set_tun(&mut *backend, enabled)
     }
 }
@@ -326,7 +318,7 @@ mod support;
 
 use support::{
     bounded_task_reason, configured_core, initial_snapshot, publish_boot_capabilities,
-    publish_controller_secret, task_name, task_name_or_abort,
+    publish_controller_secret, task_failure, task_name,
 };
 
 #[cfg(test)]

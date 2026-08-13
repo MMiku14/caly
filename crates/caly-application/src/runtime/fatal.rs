@@ -40,13 +40,10 @@ impl RuntimeGuard {
         }
     }
 
-    /// Records first cause, counts later faults, and always requests cancellation.
+    /// Records an actor-result application failure as a runtime fatal.
     /// Every record is logged — a fatal that ends the daemon must never be
     /// silent (W3a 排查: a refresh-time fatal exited the daemon with zero
     /// log output before this call logged anything).
-    /// Records an actor-result application failure as a runtime fatal.
-    /// Restored after an over-eager regex deleted it along with
-    /// `complete_shutdown_phase` (2026-08-12 dead-code audit).
     pub fn record_actor_result_error(&mut self, error: &impl std::fmt::Debug) {
         tracing::error!(
             ?error,

@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use caly_domain::NodeId;
 use caly_platform::node_selection::{
-    NodeSelectionRecord, clear_node_selection, load_node_selection, save_node_selection,
+    clear_node_selection, load_node_selection, save_node_selection, NodeSelectionRecord,
 };
 use caly_platform::paths::AppPaths;
 use tracing::{debug, info, warn};
@@ -81,20 +81,14 @@ pub fn restore(
 fn restore_at(
     path: &Path,
     core: caly_domain::CoreKind,
-    timeout: Duration,
+    _timeout: Duration,
     select: impl FnOnce(&str, &str) -> Result<(), String>,
 ) {
     let Some(record) = load_node_selection(path) else {
         return;
     };
     let label = core_kind_label(core);
-    // A legacy record (written before the `core` slot existed) stores
-    // Mihomo spelling — every pre-slot writer was the Mihomo path — so
-    // only the Mihomo slot may consume it; replaying it against
-    // sing-box would 400 and drop the selection (2026-08-12 audit).
-    let foreign = !record.core.is_empty() && record.core != label
-        || (record.core.is_empty() && label != "mihomo");
-    if foreign {
+    if foreign_core_record(&record.core, &label) {
         // The record belongs to the other kernel's spelling; keep it for
         // when that core comes back.
         info!(
@@ -125,15 +119,17 @@ fn restore_at(
             );
         }
     }
-    let _ = timeout;
 }
 
-/// Reconciles the persisted selection against the current node registry
-/// after a subscription refresh (刀 3, 2026-08-12 pipeline design): the
-/// selection intent is the stable `node_id`, the display name follows it.
-/// When the node still exists under a new name the record is updated, so
-/// the next core restart restores the choice; when the node is gone the
-/// record is cleared (there is nothing left to restore).
+/// Whether a persisted selection record belongs to another core: the slot
+/// must match `label`, and a legacy record (written before the `core` slot
+/// existed) stores Mihomo spelling — every pre-slot writer was the Mihomo
+/// path — so only the Mihomo slot may consume it; replaying it against
+/// sing-box would 400 and drop the selection (2026-08-12 audit).
+fn foreign_core_record(record_core: &str, label: &str) -> bool {
+    !record_core.is_empty() && record_core != label || (record_core.is_empty() && label != "mihomo")
+}
+
 /// Reconciles the persisted selection against the current node registry
 /// after a subscription refresh (刀 3, 2026-08-12 pipeline design): the
 /// selection intent is the stable `node_id`, the display name follows it.
@@ -164,9 +160,7 @@ fn reconcile_at(
     // Mirror the restore gate: only reconcile the record that belongs to
     // the currently active core (legacy empty-core records are mihomo).
     let label = core_kind_label(active);
-    let foreign = !record.core.is_empty() && record.core != label
-        || (record.core.is_empty() && label != "mihomo");
-    if foreign {
+    if foreign_core_record(&record.core, &label) {
         debug!(
             record_core = %record.core,
             active_core = %label,

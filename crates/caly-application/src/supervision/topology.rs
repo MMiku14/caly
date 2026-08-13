@@ -65,8 +65,8 @@ pub fn validate_topology(
 }
 
 /// Intended v2 synchronous wait graph.
-pub fn default_topology()
--> Result<BoundedVec<DependencyEdge, MAX_DEPENDENCY_EDGES>, caly_domain::CapacityError> {
+pub fn default_topology(
+) -> Result<BoundedVec<DependencyEdge, MAX_DEPENDENCY_EDGES>, caly_domain::CapacityError> {
     BoundedVec::try_from_vec(vec![DependencyEdge {
         from: Component::EventSequencer,
         to: Component::StateProjector,

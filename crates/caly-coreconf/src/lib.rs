@@ -11,6 +11,7 @@
 pub mod mihomo;
 pub mod rules;
 pub mod sing_box;
+mod labels;
 
 /// Render-side failure: a message plus the operator-facing suggested action.
 ///

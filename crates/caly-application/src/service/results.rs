@@ -2,11 +2,11 @@
 
 use std::time::Duration;
 
-use caly_domain::{EventCursor, OperationFailure, OperationId, OperationState, OperationStatus};
+use caly_domain::{EventCursor, OperationId, OperationState, OperationStatus};
 
 use crate::{
     actor_result::{ActorReport, ActorResultReceiver, ResultDeltas},
-    operations::{AdmissionError, TimeSource},
+    operations::{AdmissionController, AdmissionError, TimeSource},
     projection::{ProjectionRuntime, ProjectionRuntimeError},
     runtime::MailboxReceiveError,
     service::runtime_service::RuntimeService,
@@ -82,12 +82,16 @@ impl<T: TimeSource> RuntimeService<T, ProjectionRuntime> {
             ActorReport::Completed {
                 operation_id,
                 deltas,
-            } => self.apply_completed(operation_id, deltas),
+            } => self.apply_terminal(operation_id, deltas, |admission| {
+                admission.complete(operation_id)
+            }),
             ActorReport::Failed {
                 operation_id,
                 failure,
                 deltas,
-            } => self.apply_failed(operation_id, failure, deltas),
+            } => self.apply_terminal(operation_id, deltas, |admission| {
+                admission.fail(operation_id, failure)
+            }),
             ActorReport::Crashed { deltas }
             | ActorReport::Recovered { deltas }
             | ActorReport::Observed { deltas } => {
@@ -103,39 +107,17 @@ impl<T: TimeSource> RuntimeService<T, ProjectionRuntime> {
         }
     }
 
-    fn apply_completed(
+    fn apply_terminal(
         &mut self,
         operation_id: OperationId,
         deltas: ResultDeltas,
+        transition: impl FnOnce(&mut AdmissionController<T>) -> Result<OperationStatus, AdmissionError>,
     ) -> Result<ActorResultOutcome, ActorResultError> {
         if let Some(outcome) = self.cancelled_outcome(operation_id)? {
             return Ok(outcome);
         }
         let cursor = publish_deltas(self.projection_mut(), deltas)?;
-        let status = self
-            .admission_mut()
-            .complete(operation_id)
-            .map_err(ActorResultError::Admission)?;
-        Ok(ActorResultOutcome::Terminal {
-            status,
-            published_through: cursor,
-        })
-    }
-
-    fn apply_failed(
-        &mut self,
-        operation_id: OperationId,
-        failure: OperationFailure,
-        deltas: ResultDeltas,
-    ) -> Result<ActorResultOutcome, ActorResultError> {
-        if let Some(outcome) = self.cancelled_outcome(operation_id)? {
-            return Ok(outcome);
-        }
-        let cursor = publish_deltas(self.projection_mut(), deltas)?;
-        let status = self
-            .admission_mut()
-            .fail(operation_id, failure)
-            .map_err(ActorResultError::Admission)?;
+        let status = transition(self.admission_mut()).map_err(ActorResultError::Admission)?;
         Ok(ActorResultOutcome::Terminal {
             status,
             published_through: cursor,
@@ -180,7 +162,7 @@ fn publish_deltas(
 mod tests {
     use super::*;
     use crate::{
-        actor_result::{ActorReport, actor_result_mailbox},
+        actor_result::{actor_result_mailbox, ActorReport},
         command_bus::{Command, CommandEnvelope},
         operations::{AdmissionController, CancelDecision, OperationStore},
     };
@@ -255,8 +237,8 @@ mod tests {
     }
 
     #[test]
-    fn crashed_report_projects_without_touching_operations()
-    -> Result<(), Box<dyn std::error::Error>> {
+    fn crashed_report_projects_without_touching_operations(
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let (ingress, _receiver) = crate::command_bus::command_bus(4)?;
         let admission = AdmissionController::new(OperationStore::new(4, 2)?, ingress, Clock(0));
         let projection = ProjectionRuntime::new(snapshot()?, 4, 4)?;
@@ -294,8 +276,8 @@ mod tests {
     }
 
     #[test]
-    fn observed_report_projects_telemetry_without_operations()
-    -> Result<(), Box<dyn std::error::Error>> {
+    fn observed_report_projects_telemetry_without_operations(
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let (ingress, _receiver) = crate::command_bus::command_bus(4)?;
         let admission = AdmissionController::new(OperationStore::new(4, 2)?, ingress, Clock(0));
         let projection = ProjectionRuntime::new(snapshot()?, 4, 4)?;

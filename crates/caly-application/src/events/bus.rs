@@ -117,6 +117,26 @@ impl EventBus {
     }
 }
 
+/// Runs a reconciler loop on a bus subscription: blocks on `recv_timeout`,
+/// invoking `on_changed` for a changed-refresh fact, and ends only when the
+/// bus is dropped (daemon shutdown). `Timeout` wakes are normal idle
+/// intervals, not a reason to stop (an earlier `while let Ok` version
+/// exited on the first idle second and never saw refresh events).
+pub fn run_reconciler(
+    events: &std::sync::mpsc::Receiver<DaemonEvent>,
+    interval: std::time::Duration,
+    mut on_changed: impl FnMut(),
+) {
+    loop {
+        match events.recv_timeout(interval) {
+            Ok(DaemonEvent::SubscriptionRefreshed { changed: true }) => on_changed(),
+            Ok(_) => {}
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -8,7 +8,7 @@
 use std::path::Path;
 
 use caly_domain::SubscriptionId;
-use caly_subscription::{SubscriptionFormat, decode_document, parse_uri_body_to_display_lossy};
+use caly_subscription::{decode_document, parse_uri_body_to_display_lossy, SubscriptionFormat};
 
 /// Outcome of parsing a subscription file.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -24,6 +24,75 @@ pub struct SubscriptionSummary {
 }
 
 /// Reads and parses `path`, returning a human-readable summary. An optional
+/// The summary userinfo when no `subscription-userinfo` header was present.
+fn userinfo_or_default(userinfo_header: Option<&str>) -> caly_subscription::SubscriptionUserInfo {
+    userinfo_header.map_or_else(
+        || caly_subscription::SubscriptionUserInfo {
+            upload_bytes: None,
+            download_bytes: None,
+            total_bytes: None,
+            expire_unix: None,
+        },
+        caly_subscription::parse_subscription_userinfo,
+    )
+}
+
+/// The url-list summary shape: no offline nodes, entries only (the daemon
+/// fetches and merges the children during refresh).
+fn url_list_summary<'a>(
+    lines: impl Iterator<Item = &'a str>,
+    userinfo: caly_subscription::SubscriptionUserInfo,
+) -> SubscriptionSummary {
+    SubscriptionSummary {
+        format: "url-list".to_owned(),
+        node_count: 0,
+        rejected_lines: 0,
+        ssr_skipped: 0,
+        names: lines.map(str::to_owned).collect(),
+        userinfo,
+    }
+}
+
+/// The ssr-only summary shape: all lines were SSR nodes.
+fn ssr_only_summary(
+    count: usize,
+    userinfo: caly_subscription::SubscriptionUserInfo,
+) -> SubscriptionSummary {
+    SubscriptionSummary {
+        format: "ssr-only".to_owned(),
+        node_count: 0,
+        rejected_lines: 0,
+        ssr_skipped: count,
+        names: Vec::new(),
+        userinfo,
+    }
+}
+
+/// The §6.1 face name for a decoded document format.
+fn format_name(format: SubscriptionFormat) -> &'static str {
+    match format {
+        SubscriptionFormat::UriLines => "uri-lines",
+        SubscriptionFormat::Base64UriLines => "base64-uri-lines",
+        // The classifier only yields UriLines for these two.
+        SubscriptionFormat::ClashYaml => "clash-yaml",
+    }
+}
+
+/// Stamps the quota fields onto the §6.1 envelope when the userinfo header
+/// carried a total (backward-compatible with the pre-W3a `sub parse --json`).
+fn apply_quota(value: &mut serde_json::Value, userinfo: &caly_subscription::SubscriptionUserInfo) {
+    if let Some(total) = userinfo.total_bytes {
+        let used = userinfo
+            .upload_bytes
+            .unwrap_or(0)
+            .saturating_add(userinfo.download_bytes.unwrap_or(0));
+        value["quota_total"] = serde_json::json!(total);
+        value["quota_used"] = serde_json::json!(used);
+        value["quota_remaining"] = serde_json::json!(total.saturating_sub(used));
+    }
+}
+
+/// Reads and parses `path`, returning a human-readable summary. An optional
 /// `subscription-userinfo` header value supplies quota metadata.
 pub fn inspect_subscription_with_userinfo(
     path: &Path,
@@ -34,9 +103,6 @@ pub fn inspect_subscription_with_userinfo(
     inspect_subscription(body, userinfo_header)
 }
 
-/// Reads proxy URIs from the system clipboard and parses them as a synthetic
-/// document. Tries Wayland (`wl-paste`) first, then X11 (`xclip`, `xsel`).
-/// Returns an error that also suggests `caly sub check <file>` as a fallback.
 /// Reads proxy URIs from the system clipboard and parses them as a synthetic
 /// document. Tries Wayland (`wl-paste`) first, then X11 (`xclip`, `xsel`).
 /// Returns an error that also suggests `caly sub check <file>` as a fallback.
@@ -80,28 +146,16 @@ pub fn inspect_subscription(
     body: Vec<u8>,
     userinfo_header: Option<&str>,
 ) -> Result<SubscriptionSummary, String> {
-    let userinfo = userinfo_header.map_or_else(
-        || caly_subscription::SubscriptionUserInfo {
-            upload_bytes: None,
-            download_bytes: None,
-            total_bytes: None,
-            expire_unix: None,
-        },
-        caly_subscription::parse_subscription_userinfo,
-    );
+    let userinfo = userinfo_or_default(userinfo_header);
     // URL-list documents carry no nodes offline; the daemon fetches and merges
     // the children during refresh. Report the entries instead of parsing.
     if let Ok(caly_subscription::SubscriptionDocument::UrlList(lines)) =
         decode_document(body.clone())
     {
-        return Ok(SubscriptionSummary {
-            format: "url-list".to_owned(),
-            node_count: 0,
-            rejected_lines: 0,
-            ssr_skipped: 0,
-            names: lines.iter().map(|line| line.as_str().to_owned()).collect(),
+        return Ok(url_list_summary(
+            lines.iter().map(caly_domain::BoundedText::as_str),
             userinfo,
-        });
+        ));
     }
     let format = detect_format(&body).unwrap_or_else(|| "unknown".to_owned());
     // A stable, all-zero subscription id for an offline preview.
@@ -109,14 +163,7 @@ pub fn inspect_subscription(
     let projection = match parse_uri_body_to_display_lossy(body, subscription) {
         Ok(projection) => projection,
         Err(caly_subscription::PipelineError::SsrOnly(count)) => {
-            return Ok(SubscriptionSummary {
-                format: "ssr-only".to_owned(),
-                node_count: 0,
-                rejected_lines: 0,
-                ssr_skipped: count,
-                names: Vec::new(),
-                userinfo,
-            });
+            return Ok(ssr_only_summary(count, userinfo));
         }
         Err(error) => return Err(format!("subscription parse failed: {error:?}")),
     };
@@ -186,30 +233,15 @@ pub fn parse_subscription_tree_body(
     body: Vec<u8>,
     userinfo_header: Option<&str>,
 ) -> Result<ParseOutcome, String> {
-    let userinfo = userinfo_header.map_or_else(
-        || caly_subscription::SubscriptionUserInfo {
-            upload_bytes: None,
-            download_bytes: None,
-            total_bytes: None,
-            expire_unix: None,
-        },
-        caly_subscription::parse_subscription_userinfo,
-    );
+    let userinfo = userinfo_or_default(userinfo_header);
     let subscription = SubscriptionId::from_bytes([0; 16]);
     match decode_document(body.clone()) {
         // URL-list documents carry no nodes offline; the daemon fetches
         // and merges the children during refresh. Keep the legacy
         // summary render.
-        Ok(caly_subscription::SubscriptionDocument::UrlList(lines)) => {
-            Ok(ParseOutcome::Summary(SubscriptionSummary {
-                format: "url-list".to_owned(),
-                node_count: 0,
-                rejected_lines: 0,
-                ssr_skipped: 0,
-                names: lines.iter().map(|line| line.as_str().to_owned()).collect(),
-                userinfo,
-            }))
-        }
+        Ok(caly_subscription::SubscriptionDocument::UrlList(lines)) => Ok(ParseOutcome::Summary(
+            url_list_summary(lines.iter().map(caly_domain::BoundedText::as_str), userinfo),
+        )),
         // Clash YAML: the full tree — groups, ungrouped nodes, rules.
         Ok(caly_subscription::SubscriptionDocument::ClashYaml(yaml)) => {
             let source = String::from_utf8(yaml.to_vec())
@@ -238,12 +270,7 @@ pub fn parse_subscription_tree_body(
                             )
                         })
                         .collect();
-                    let format = match source_format {
-                        caly_subscription::SubscriptionFormat::UriLines => "uri-lines",
-                        caly_subscription::SubscriptionFormat::Base64UriLines => "base64-uri-lines",
-                        // The classifier only yields UriLines for these two.
-                        caly_subscription::SubscriptionFormat::ClashYaml => "clash-yaml",
-                    };
+                    let format = format_name(source_format);
                     Ok(ParseOutcome::Tree {
                         tree: crate::entry_tree::from_uri_nodes(format, nodes),
                         rejected_lines: projection.rejected_lines,
@@ -252,14 +279,7 @@ pub fn parse_subscription_tree_body(
                     })
                 }
                 Err(caly_subscription::PipelineError::SsrOnly(count)) => {
-                    Ok(ParseOutcome::Summary(SubscriptionSummary {
-                        format: "ssr-only".to_owned(),
-                        node_count: 0,
-                        rejected_lines: 0,
-                        ssr_skipped: count,
-                        names: Vec::new(),
-                        userinfo,
-                    }))
+                    Ok(ParseOutcome::Summary(ssr_only_summary(count, userinfo)))
                 }
                 Err(error) => Err(format!("subscription parse failed: {error:?}")),
             }
@@ -311,15 +331,7 @@ pub fn render_tree_json(outcome: &ParseOutcome) -> String {
     match outcome {
         ParseOutcome::Tree { tree, userinfo, .. } => {
             let mut value = crate::entry_tree::render_json(tree);
-            if let Some(total) = userinfo.total_bytes {
-                let used = userinfo
-                    .upload_bytes
-                    .unwrap_or(0)
-                    .saturating_add(userinfo.download_bytes.unwrap_or(0));
-                value["quota_total"] = serde_json::json!(total);
-                value["quota_used"] = serde_json::json!(used);
-                value["quota_remaining"] = serde_json::json!(total.saturating_sub(used));
-            }
+            apply_quota(&mut value, userinfo);
             value.to_string()
         }
         ParseOutcome::Summary(summary) => render_json(summary),
@@ -394,21 +406,10 @@ pub fn render_json(summary: &SubscriptionSummary) -> String {
         "ssr_skipped": summary.ssr_skipped,
         "names": summary.names,
     });
-    if let Some(total) = summary.userinfo.total_bytes {
-        let used = summary
-            .userinfo
-            .upload_bytes
-            .unwrap_or(0)
-            .saturating_add(summary.userinfo.download_bytes.unwrap_or(0));
-        let remaining = total.saturating_sub(used);
-        value["quota_total"] = serde_json::json!(total);
-        value["quota_used"] = serde_json::json!(used);
-        value["quota_remaining"] = serde_json::json!(remaining);
-    }
+    apply_quota(&mut value, &summary.userinfo);
     value.to_string()
 }
 
-/// Returns whether the subscription parsed with any nodes and no hard failure.
 /// Returns whether the subscription parsed into something the refresh path can
 /// use: dialable nodes, or a URL list the daemon expands at fetch time.
 pub fn is_usable(summary: &SubscriptionSummary) -> bool {
@@ -433,7 +434,7 @@ mod tests {
 
     /// Builds a valid shadowsocks URI from a method:password pair.
     fn ss_uri(method: &str, password: &str, host: &str, port: u16, name: &str) -> String {
-        use base64::{Engine as _, engine::general_purpose};
+        use base64::{engine::general_purpose, Engine as _};
         let credentials = general_purpose::STANDARD.encode(format!("{method}:{password}"));
         format!("ss://{credentials}@{host}:{port}#{name}")
     }
@@ -452,7 +453,7 @@ mod tests {
 
     #[test]
     fn detects_base64_aggregate() -> Result<(), String> {
-        use base64::{Engine as _, engine::general_purpose};
+        use base64::{engine::general_purpose, Engine as _};
         let a = ss_uri("aes-256-gcm", "pw1", "example.com", 8388, "a");
         let b = ss_uri("aes-128-gcm", "pw2", "example.org", 443, "b");
         let encoded = general_purpose::STANDARD.encode(format!("{a}\n{b}"));

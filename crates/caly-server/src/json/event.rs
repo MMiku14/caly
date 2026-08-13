@@ -3,10 +3,10 @@
 use caly_application::events::{ApplicationEvent, SequencedEvent};
 use caly_protocol::{
     conversion::{
-        EncodeError, applied_to_wire, capabilities_to_wire, cursor_to_wire, desired_to_wire,
-        nodes_to_wire, observed_to_wire, platform_to_wire,
+        applied_to_wire, capabilities_to_wire, cursor_to_wire, desired_to_wire, nodes_to_wire,
+        observed_to_wire, platform_to_wire, proxy_groups_to_wire, EncodeError,
     },
-    protocol::v2::{WireEvent, WireProjectionEvent, WireProxyGroup},
+    protocol::v2::{WireEvent, WireProjectionEvent},
 };
 
 /// Encodes one already-sequenced projection event.
@@ -31,16 +31,7 @@ pub fn event_to_wire(value: &SequencedEvent) -> Result<WireEvent, EncodeError> {
             WireProjectionEvent::NodesReplaced(nodes_to_wire(state)?)
         }
         ApplicationEvent::GroupsReplaced(groups) => {
-            let mut wire = caly_domain::BoundedVec::new();
-            for group in groups {
-                let _ = wire.try_extend(vec![WireProxyGroup {
-                    name: group.name.clone(),
-                    kind: group.kind.clone(),
-                    selected: group.selected.clone(),
-                    members: group.members.clone(),
-                }]);
-            }
-            WireProjectionEvent::GroupsReplaced(wire)
+            WireProjectionEvent::GroupsReplaced(proxy_groups_to_wire(groups))
         }
     };
     Ok(WireEvent {

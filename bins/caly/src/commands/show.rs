@@ -13,6 +13,7 @@ use std::process::ExitCode;
 use crate::cli::{
     SetSubCmd, ShowCmd, ShowConfigCmd, ShowCoreCmd, ShowProfileCmd, ShowProxyCmd, ShowSubCmd,
 };
+use crate::client::hex;
 use crate::output::CliOutput;
 
 pub fn run(cmd: ShowCmd, options: crate::cli::CliOptions, output: CliOutput) -> ExitCode {
@@ -101,10 +102,6 @@ fn health(_options: crate::cli::CliOptions, output: CliOutput) -> ExitCode {
         }
         ExitCode::SUCCESS
     })
-}
-
-fn hex(value: [u8; 16]) -> String {
-    caly_domain::to_hex(value)
 }
 
 fn sub(c: ShowSubCmd, options: crate::cli::CliOptions, output: CliOutput) -> ExitCode {

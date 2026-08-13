@@ -5,14 +5,13 @@
 //! commit (atomic publish + generation trim) and rollback for one
 //! Mihomo destination file.
 
-use caly_platform::fs::{AtomicFileContents, AtomicWritePlan, atomic_write};
+use caly_platform::fs::{atomic_write, AtomicFileContents, AtomicWritePlan};
 use caly_ports::{ActorFailure, CommittedConfig, ConfigActorPort, ConfigCandidate, PreparedConfig};
 use std::path::PathBuf;
 
-use super::MihomoConfigBackend;
 use super::failure;
-use super::mihomo_backend::clean_stale_validation_files;
-use super::{MAX_CONFIG_HISTORY, resolve_tun_from_config};
+use super::resolve_tun_from_config;
+use super::MihomoConfigBackend;
 
 /// Strips a trailing `# caly-generation: N` marker line (the renderer's
 /// only comment) from a published config so a no-op comparison ignores it.
@@ -55,23 +54,14 @@ impl ConfigActorPort for MihomoConfigBackend {
         // Validate against the real binary before the candidate is considered
         // prepared, so a rejected config can never reach commit.
         if let Some(binary) = self.binary.clone() {
-            clean_stale_validation_files(&self.workdir);
-            let validation_path = self
-                .workdir
-                .join(format!("config.validate.{generation}.yaml"));
-            let write = AtomicWritePlan {
-                destination: validation_path.clone(),
-                temporary: self
-                    .workdir
-                    .join(format!("config.validate.{generation}.tmp")),
-                contents: contents.clone(),
-            };
-            atomic_write(&mut self.filesystem, write).map_err(|error| {
-                failure(
-                    &format!("Mihomo validation staging failed: {error}"),
-                    "inspect working-directory ownership",
-                )
-            })?;
+            let validation_path = super::mihomo_backend::stage_validation(
+                "Mihomo",
+                "yaml",
+                &mut self.filesystem,
+                &self.workdir,
+                &contents,
+                generation,
+            )?;
             let report = self.validate_config(
                 binary,
                 self.workdir.clone(),
@@ -83,22 +73,7 @@ impl ConfigActorPort for MihomoConfigBackend {
                 self.workdir
                     .join(format!("config.validate.{generation}.tmp")),
             );
-            if !report.accepted {
-                // Surface the kernel's own rejection reason instead of a generic
-                // "rejected" summary; the diagnostic is the stderr from the
-                // validation executable and directly points at the bad field.
-                let detail = report
-                    .diagnostic
-                    .as_ref()
-                    .map(|d| d.as_str().trim())
-                    .filter(|d| !d.is_empty())
-                    .map(|d| format!(": {d}"))
-                    .unwrap_or_default();
-                return Err(failure(
-                    &format!("generated config was rejected by the Mihomo binary{detail}"),
-                    "inspect the validation diagnostic above or the base settings",
-                ));
-            }
+            super::mihomo_backend::ensure_accepted("Mihomo", report)?;
         }
         self.prepared.insert(candidate.id, (generation, contents));
         Ok(PreparedConfig {
@@ -171,31 +146,14 @@ impl ConfigActorPort for MihomoConfigBackend {
                 "reduce generated configuration",
             )
         })?;
-        let temporary = PathBuf::from(format!(
-            "{}.tmp.{}",
-            self.destination.display(),
-            prepared.generation
-        ));
-        atomic_write(
+        super::mihomo_backend::publish_and_record(
             &mut self.filesystem,
-            AtomicWritePlan {
-                destination: self.destination.clone(),
-                temporary,
-                contents: contents.clone(),
-            },
-        )
-        .map_err(|error| {
-            failure(
-                &format!("Mihomo config publish failed: {error}"),
-                "inspect config filesystem ownership",
-            )
-        })?;
-        self.history.insert(prepared.generation, contents);
-        while self.history.len() > MAX_CONFIG_HISTORY {
-            if let Some(oldest) = self.history.keys().next().copied() {
-                self.history.remove(&oldest);
-            }
-        }
+            &self.destination,
+            contents,
+            prepared.generation,
+            &mut self.history,
+            "Mihomo",
+        )?;
         self.generation = prepared.generation;
         Ok(CommittedConfig {
             candidate_id: prepared.candidate_id,

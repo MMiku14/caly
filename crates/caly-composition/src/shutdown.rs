@@ -8,7 +8,7 @@ use caly_domain::BoundedText;
 
 use caly_application::{
     actors::{CoreLifecycleCommandBackend, TelemetryActorCommand},
-    runtime::{MailboxSendError, ShutdownActions, ShutdownRunError, run_shutdown},
+    runtime::{ShutdownActions, ShutdownRunError, run_shutdown},
 };
 use caly_backends::dual::DualCoreLifecycle;
 
@@ -67,15 +67,6 @@ impl DaemonShutdownActions {
 
 #[async_trait::async_trait]
 impl ShutdownActions for DaemonShutdownActions {
-    async fn reject_transport_mutations(&mut self) -> Result<(), BoundedText<512>> {
-        // Transport admission already fail-stops on a fatal fault; nothing to do.
-        Ok(())
-    }
-
-    async fn close_command_ingress(&mut self) -> Result<(), BoundedText<512>> {
-        Ok(())
-    }
-
     async fn stop_telemetry(&mut self) -> Result<(), BoundedText<512>> {
         send_shutdown(&self.telemetry, TelemetryActorCommand::Shutdown);
         Ok(())
@@ -95,49 +86,23 @@ impl ShutdownActions for DaemonShutdownActions {
 
     async fn restore_platform(&mut self) -> Result<(), BoundedText<512>> {
         // Fidelity restore: return the desktop to the exact state captured
-        // before engagement (not merely "proxy off"). The durable backend
-        // clears its record only after a successful revert; on failure the
-        // record remains for restore-first on the next boot. A missing record
-        // means this daemon never engaged the proxy and nothing is touched.
-        //
-        // The proxy and TUN restores are collected independently: a proxy
-        // failure must not skip TUN release (the pre-fix `?` short-circuit
-        // left the TUN device + record behind, and restore-first on the next
-        // boot would re-engage TUN against the operator's intent).
+        // before engagement. The durable backend clears its record only after
+        // a successful revert; a missing record means nothing was engaged.
+        // Proxy and TUN restores are collected independently: a proxy failure
+        // must never skip TUN release (the pre-fix `?` short-circuit left the
+        // TUN device + record behind, and next-boot restore-first would
+        // re-engage TUN against the operator's intent).
         collect_restore_failures(
             self.platform.restore_original_and_clear(),
             self.tun.restore_and_clear(),
         )
-    }
-
-    async fn stop_subscriptions(&mut self) -> Result<(), BoundedText<512>> {
-        Ok(())
-    }
-
-    async fn finish_config_transactions(&mut self) -> Result<(), BoundedText<512>> {
-        Ok(())
-    }
-
-    async fn flush_event_sequencer(&mut self) -> Result<(), BoundedText<512>> {
-        Ok(())
-    }
-
-    async fn stop_projector(&mut self) -> Result<(), BoundedText<512>> {
-        Ok(())
-    }
-
-    async fn release_transport_and_lock(&mut self) -> Result<(), BoundedText<512>> {
-        Ok(())
     }
 }
 
 /// Sends a terminal `Shutdown` message to an actor ingress; a full or closed
 /// mailbox is tolerated because the task group will still be awaited.
 fn send_shutdown<M: Send>(ingress: &caly_application::runtime::ActorIngress<M>, message: M) {
-    match ingress.try_send(message) {
-        Ok(()) => {}
-        Err(MailboxSendError::Full(_)) | Err(MailboxSendError::Closed(_)) => {}
-    }
+    let _ = ingress.try_send(message);
 }
 
 #[cfg(test)]

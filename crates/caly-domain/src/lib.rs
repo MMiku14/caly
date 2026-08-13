@@ -30,7 +30,7 @@ pub use event::{
     CursorDisposition, EventCursor, EventSequence, SequenceExhausted, classify_cursor,
 };
 pub use identity::{
-    DaemonInstanceId, IdentityParseError, NodeId, OperationId, SubscriptionId, to_hex,
+    DaemonInstanceId, IdentityParseError, NodeId, OperationId, SubscriptionId, hex_nibble, to_hex,
 };
 pub use node::{
     CongestionControl, Credential, DialableNode, DisplayNode, Endpoint, EndpointHost, HostError,

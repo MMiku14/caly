@@ -10,8 +10,8 @@ use crate::{
 };
 
 use super::{
+    reporting::{finish_report, HandlerReportError},
     CoreCommandBackend,
-    reporting::{HandlerReportError, report_outcome},
 };
 
 /// Nonblocking CoreActor backend; process/API I/O belongs to its owned worker.
@@ -91,11 +91,9 @@ impl<B: CoreCommandBackend> ActorHandler<RoutedCommand> for CoreCommandHandler<B
             }
             _ => return Err(CoreHandlerError::WrongCommand),
         };
-        report_outcome(&self.results, operation_id, outcome).map_err(CoreHandlerError::Report)?;
-        Ok(ActorDirective::Continue)
+        finish_report(&self.results, operation_id, outcome).map_err(CoreHandlerError::Report)
     }
 }
-
 /// W3b: after a selection the kernel-side group state may have changed
 /// (`now` moved, membership re-derived) — refresh the proxy-group slice
 /// so the projection's GROUP column and group rows stay current.

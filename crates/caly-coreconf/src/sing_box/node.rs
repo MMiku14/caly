@@ -7,7 +7,7 @@
 //! Kept separate from `document.rs` (document assembly) so each file stays
 //! within the project's line limits.
 
-use caly_domain::{DialableNode, Protocol, ShadowsocksCipher, VmessCipher};
+use caly_domain::{DialableNode, Protocol};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -60,7 +60,7 @@ fn node_outbound(node: &DialableNode) -> Result<NodeOutbound, SingBoxOutboundErr
             security,
         } => Ok(NodeOutbound::Vmess(Box::new(VmessOutbound {
             alter_id: *alter_id,
-            security: vmess_cipher(*security),
+            security: crate::labels::vmess_cipher(*security),
             server,
             server_port,
             tag,
@@ -100,7 +100,7 @@ fn node_outbound(node: &DialableNode) -> Result<NodeOutbound, SingBoxOutboundErr
             password,
             congestion,
         } => Ok(NodeOutbound::Tuic(Box::new(TuicOutbound {
-            congestion_control: congestion_label(*congestion),
+            congestion_control: crate::labels::congestion_label(*congestion),
             password: password.with_exposed(str::to_owned),
             server,
             server_port,
@@ -186,7 +186,9 @@ fn node_outbound_ss(
     if plugin.is_some() {
         return Err(SingBoxOutboundError::UnsupportedNode);
     }
-    let Some(label) = ss_method(method) else {
+    let Some(label) =
+        crate::labels::ss_cipher_supported(method).then(|| crate::labels::ss_cipher_label(method))
+    else {
         return Err(SingBoxOutboundError::UnsupportedNode);
     };
     Ok(NodeOutbound::Shadowsocks(ShadowsocksOutbound {
@@ -547,39 +549,6 @@ fn sing_box_fingerprint(label: &str) -> &'static str {
         "random" => "random",
         "randomized" => "randomized",
         _ => "random",
-    }
-}
-
-/// Maps a Domain VMess cipher to its sing-box cipher label.
-fn vmess_cipher(cipher: VmessCipher) -> &'static str {
-    match cipher {
-        VmessCipher::Auto => "auto",
-        VmessCipher::Aes128Gcm => "aes-128-gcm",
-        VmessCipher::Chacha20Poly1305 => "chacha20-poly1305",
-        VmessCipher::None => "none",
-    }
-}
-
-/// Maps a Shadowsocks cipher to its sing-box label; `None` is returned for
-/// ciphers sing-box cannot dial (e.g. legacy `aes-128-cfb`), so the node is
-/// skipped instead of producing a rejected document.
-fn ss_method(cipher: ShadowsocksCipher) -> Option<&'static str> {
-    match cipher {
-        ShadowsocksCipher::Aes128Gcm => Some("aes-128-gcm"),
-        ShadowsocksCipher::Aes256Gcm => Some("aes-256-gcm"),
-        ShadowsocksCipher::Chacha20IetfPoly1305 => Some("chacha20-ietf-poly1305"),
-        ShadowsocksCipher::Xchacha20IetfPoly1305 => Some("xchacha20-ietf-poly1305"),
-        ShadowsocksCipher::None => Some("none"),
-        ShadowsocksCipher::Aes128Cfb | ShadowsocksCipher::Aes256Cfb => None,
-    }
-}
-
-/// Maps a Domain congestion-control choice to its sing-box label.
-fn congestion_label(congestion: caly_domain::CongestionControl) -> &'static str {
-    match congestion {
-        caly_domain::CongestionControl::Bbr => "bbr",
-        caly_domain::CongestionControl::Cubic => "cubic",
-        caly_domain::CongestionControl::NewReno => "new_reno",
     }
 }
 

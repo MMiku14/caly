@@ -26,12 +26,8 @@ pub use subscription_handler::{SubscriptionCommandHandler, SubscriptionHandlerEr
 pub use telemetry_command::TelemetryActorCommand;
 pub use telemetry_handler::TelemetryCommandHandler;
 
-// Port traits and shared error come from the `caly-ports`
-// crate (the round-32 attempt to inline them into
-// `crate::ports` was reverted because `caly-backends`
-// prod-deps the port traits and the backends crate is
-// itself prod-deped by this crate, which would form a
-// workspace-level cycle).
+// Port traits and shared error re-exported from `caly-ports` (a workspace
+// member so `caly-backends` can prod-dep them without a cycle).
 pub use caly_ports::{
     ActorFailure, ActorFailureKind, CommittedConfig, ConfigActorPort, ConfigCandidate,
     CoreCommandBackend, CoreLifecycleCommandBackend, FailureMessage, PlatformCommandBackend,

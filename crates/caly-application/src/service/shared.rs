@@ -1,7 +1,7 @@
 //! Shared transport facade for the daemon composition root.
 
 use std::{
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, MutexGuard},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -18,40 +18,39 @@ use crate::{
     },
 };
 
+/// Locks the shared service, mapping a poisoned mutex to the facade error.
+fn lock_service(
+    service: &Arc<Mutex<RuntimeService<WallClock, ProjectionRuntime>>>,
+) -> Result<MutexGuard<'_, RuntimeService<WallClock, ProjectionRuntime>>, ApplicationServiceError> {
+    service
+        .lock()
+        .map_err(|_| ApplicationServiceError::InternalInvariant)
+}
+
 impl ApplicationServicePort for Arc<Mutex<RuntimeService<WallClock, ProjectionRuntime>>> {
     fn submit(
         &mut self,
         envelope: CommandEnvelope,
     ) -> Result<OperationStatus, ApplicationServiceError> {
-        self.lock()
-            .map_err(|_| ApplicationServiceError::InternalInvariant)?
-            .submit(envelope)
+        lock_service(self)?.submit(envelope)
     }
     fn cancel(&mut self, id: OperationId) -> Result<CancellationResult, ApplicationServiceError> {
-        self.lock()
-            .map_err(|_| ApplicationServiceError::InternalInvariant)?
-            .cancel(id)
+        lock_service(self)?.cancel(id)
     }
     fn operation_status(
         &self,
         id: OperationId,
     ) -> Result<OperationStatus, ApplicationServiceError> {
-        self.lock()
-            .map_err(|_| ApplicationServiceError::InternalInvariant)?
-            .operation_status(id)
+        lock_service(self)?.operation_status(id)
     }
     fn snapshot(&self) -> Result<PresentationSnapshot, ApplicationServiceError> {
-        self.lock()
-            .map_err(|_| ApplicationServiceError::InternalInvariant)?
-            .snapshot()
+        lock_service(self)?.snapshot()
     }
     fn watch_after(
         &self,
         cursor: Option<EventCursor>,
     ) -> Result<ApplicationWatch, ApplicationServiceError> {
-        self.lock()
-            .map_err(|_| ApplicationServiceError::InternalInvariant)?
-            .watch_after(cursor)
+        lock_service(self)?.watch_after(cursor)
     }
     fn subscribe_live(&self) -> tokio::sync::broadcast::Receiver<SequencedEvent> {
         let Ok(guard) = self.lock() else {

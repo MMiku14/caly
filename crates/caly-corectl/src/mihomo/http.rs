@@ -450,37 +450,19 @@ fn decode_chunked_body(body: &[u8]) -> Result<String, ()> {
 /// Mihomo's Clash-compatible API supports proxy groups, selection, connections,
 /// traffic, rules and URL-testing. Reflect that as a truthful capability set.
 pub(crate) fn mihomo_capabilities() -> CapabilitySet {
-    use caly_domain::{
-        BoundedVec, Capability, CapabilityStatus, ConfiguredSupport, RuntimeAvailability,
-    };
-    let supported = |capability| {
-        CapabilityStatus::new(
-            capability,
-            ConfiguredSupport::Supported,
-            RuntimeAvailability::NotRequired,
-            None,
-        )
-    };
+    use caly_domain::{Capability, ConfiguredSupport};
+    use crate::common::{capability_set, capability_status};
     let statuses = vec![
-        supported(Capability::DnsConfiguration),
-        supported(Capability::RuntimeModeSwitch),
-        supported(Capability::ProxyGroups),
-        supported(Capability::ProxySelection),
-        supported(Capability::Connections),
-        supported(Capability::ConnectionClose),
-        supported(Capability::Traffic),
-        supported(Capability::UrlTest),
+        capability_status(Capability::DnsConfiguration, ConfiguredSupport::Supported),
+        capability_status(Capability::RuntimeModeSwitch, ConfiguredSupport::Supported),
+        capability_status(Capability::ProxyGroups, ConfiguredSupport::Supported),
+        capability_status(Capability::ProxySelection, ConfiguredSupport::Supported),
+        capability_status(Capability::Connections, ConfiguredSupport::Supported),
+        capability_status(Capability::ConnectionClose, ConfiguredSupport::Supported),
+        capability_status(Capability::Traffic, ConfiguredSupport::Supported),
+        capability_status(Capability::UrlTest, ConfiguredSupport::Supported),
     ];
-    // The hardcoded `statuses` vector always fits the bounded capacity and
-    // contains no duplicate `Capability` values. The previous
-    // `unwrap_or_else(|_| process::abort)` form was a process-kill fallback
-    // for a path that was never reachable; switching to the
-    // `from_vec_truncated` + `from_bounded_dedup` infallible constructors
-    // keeps the same behaviour for the well-formed call sites while
-    // replacing the abort with a graceful truncation/dedup that survives
-    // any future contributor who widens the literal past the bound.
-    let values = BoundedVec::from_vec_truncated(statuses);
-    CapabilitySet::from_bounded_dedup(values)
+    capability_set(statuses)
 }
 
 #[cfg(test)]

@@ -10,8 +10,8 @@ use crate::{
 };
 
 use super::{
+    reporting::{report_outcome, HandlerReportError},
     PlatformCommandBackend, TunCommandBackend,
-    reporting::{HandlerReportError, report_outcome},
 };
 
 /// Nonblocking PlatformActor backend owning recovery transactions and the TUN
@@ -133,7 +133,7 @@ impl<B: PlatformCommandBackend, T: TunCommandBackend> PlatformCommandHandler<B, 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::actor_result::{ActorReport, actor_result_mailbox};
+    use crate::actor_result::{actor_result_mailbox, ActorReport};
     use crate::command_bus::CommandEnvelope;
     use crate::operations::OperationCancellationToken;
     use std::time::Duration;

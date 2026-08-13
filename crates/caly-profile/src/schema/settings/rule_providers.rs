@@ -55,16 +55,14 @@ impl RuleProviderConfig {
             .map_err(|error| format!("rule provider name is too long: {error}"))?;
         let source = match &self.kind {
             RuleProviderSourceConfig::Http { url, interval_ms } => {
-                let bounded = RuleText::new(url.clone())
-                    .map_err(|error| format!("rule provider url is too long: {error}"))?;
+                let bounded = bound_rule_text("url", url.clone())?;
                 caly_domain::RuleProviderSource::Http {
                     url: bounded,
                     interval_ms: *interval_ms,
                 }
             }
             RuleProviderSourceConfig::File { path } => {
-                let bounded = RuleText::new(path.clone())
-                    .map_err(|error| format!("rule provider path is too long: {error}"))?;
+                let bounded = bound_rule_text("path", path.clone())?;
                 caly_domain::RuleProviderSource::File { path: bounded }
             }
             RuleProviderSourceConfig::Inline { payload } => {
@@ -84,6 +82,10 @@ impl RuleProviderConfig {
             format,
         })
     }
+}
+
+fn bound_rule_text(kind: &str, value: String) -> Result<RuleText, String> {
+    RuleText::new(value).map_err(|error| format!("rule provider {kind} is too long: {error}"))
 }
 
 const fn default_format() -> RuleProviderFormatConfig {

@@ -95,13 +95,8 @@ impl CommandSupportPolicy {
 }
 
 fn invalid_command(reason: &'static str) -> ApplicationServiceError {
-    // The input is a `&'static str` literal well under the 512-byte bound,
-    // so the bounded constructor cannot fail. The previous
-    // `unwrap_or_else(|_| abort)` form was a process-kill fallback for an
-    // unreachable path; the infallible `from_nonempty_clamped` keeps the
-    // same behaviour for the well-formed call sites and surfaces a stable
-    // `"_"` fallback for any future refactor that accidentally widens the
-    // input.
+    // Static literal, well under the 512-byte bound; the infallible
+    // `from_nonempty_clamped` degrades to a stable fallback if widened.
     let reason =
         caly_domain::BoundedText::from_nonempty_clamped(reason.to_owned(), "invalid command");
     ApplicationServiceError::InvalidCommand(reason)
@@ -116,14 +111,12 @@ mod tests {
     fn lifecycle_policy_accepts_both_managed_cores() {
         let policy = CommandSupportPolicy::lifecycle_only(CoreKind::Mihomo);
         for target in [CoreKind::Mihomo, CoreKind::SingBox] {
-            assert!(
-                policy
-                    .validate(Command::SwitchCore {
-                        target,
-                        action: CoreAction::Restart,
-                    })
-                    .is_ok()
-            );
+            assert!(policy
+                .validate(Command::SwitchCore {
+                    target,
+                    action: CoreAction::Restart,
+                })
+                .is_ok());
         }
         assert!(matches!(
             policy.validate(Command::SwitchCore {
@@ -146,69 +139,55 @@ mod tests {
     #[test]
     fn platform_policy_admits_wired_commands() {
         let policy = CommandSupportPolicy::lifecycle_and_platform(CoreKind::Mihomo);
-        assert!(
-            policy
-                .validate(Command::SwitchCore {
-                    target: CoreKind::Mihomo,
-                    action: CoreAction::Restart,
-                })
-                .is_ok()
-        );
-        assert!(
-            policy
-                .validate(Command::SetSystemProxy { enabled: true })
-                .is_ok()
-        );
+        assert!(policy
+            .validate(Command::SwitchCore {
+                target: CoreKind::Mihomo,
+                action: CoreAction::Restart,
+            })
+            .is_ok());
+        assert!(policy
+            .validate(Command::SetSystemProxy { enabled: true })
+            .is_ok());
         assert!(policy.validate(Command::CloseAllConnections).is_ok());
     }
 
     #[test]
     fn platform_policy_admits_proxy_selection_and_subscription_refresh() {
         let policy = CommandSupportPolicy::lifecycle_and_platform(CoreKind::Mihomo);
-        assert!(
-            policy
-                .validate(Command::SelectProxy {
-                    node_id: caly_domain::NodeId::from_bytes([1; 16]),
-                })
-                .is_ok()
-        );
-        assert!(
-            policy
-                .validate(Command::RefreshSubscription {
-                    subscription_id: caly_domain::SubscriptionId::from_bytes([2; 16]),
-                    force: false,
-                    scheduled: false,
-                })
-                .is_ok()
-        );
-        assert!(
-            policy
-                .validate(Command::SetMode {
-                    mode: caly_domain::ProxyMode::Global
-                })
-                .is_ok()
-        );
-        assert!(
-            policy
-                .validate(Command::ApplyConfig {
-                    candidate_id: [3; 16]
-                })
-                .is_ok()
-        );
+        assert!(policy
+            .validate(Command::SelectProxy {
+                node_id: caly_domain::NodeId::from_bytes([1; 16]),
+            })
+            .is_ok());
+        assert!(policy
+            .validate(Command::RefreshSubscription {
+                subscription_id: caly_domain::SubscriptionId::from_bytes([2; 16]),
+                force: false,
+                scheduled: false,
+            })
+            .is_ok());
+        assert!(policy
+            .validate(Command::SetMode {
+                mode: caly_domain::ProxyMode::Global
+            })
+            .is_ok());
+        assert!(policy
+            .validate(Command::ApplyConfig {
+                candidate_id: [3; 16]
+            })
+            .is_ok());
     }
 
     #[test]
     fn platform_policy_admits_set_tun_and_dual_core_switch() {
         let policy = CommandSupportPolicy::lifecycle_and_platform(CoreKind::Mihomo);
         assert!(policy.validate(Command::SetTun { enabled: true }).is_ok());
-        assert!(
-            policy
-                .validate(Command::SwitchCore {
-                    target: CoreKind::SingBox,
-                    action: CoreAction::Start,
-                })
-                .is_ok()
-        );
+        assert!(policy
+            .validate(Command::SwitchCore {
+                target: CoreKind::SingBox,
+                action: CoreAction::Start,
+            })
+            .is_ok());
         assert!(matches!(
             policy.validate(Command::SwitchCore {
                 target: CoreKind::Xray,

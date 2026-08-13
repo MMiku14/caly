@@ -1,7 +1,9 @@
 //! Linux desktop system-proxy backend (GNOME / KDE Plasma / niri).
 
 use caly_domain::{BoundedText, PlatformEffectView};
-use caly_platform::command::{CommandArguments, LinuxCommandRunner};
+use caly_platform::command::{
+    CommandArguments, CommandRequest, CommandResult, CommandRunner, LinuxCommandRunner,
+};
 use caly_ports::{ActorFailure, PlatformCommandBackend};
 
 /// Supported Linux desktop proxy backends.
@@ -177,6 +179,27 @@ fn push_argument(
             "reduce system proxy arguments",
         )
     })
+}
+
+/// Runs one desktop-backend command and requires exit code zero. Shared by
+/// the GNOME and KDE backends so the failure wording cannot drift.
+pub(super) fn run_ok<R: CommandRunner>(
+    runner: &mut R,
+    request: CommandRequest,
+) -> Result<CommandResult, ActorFailure> {
+    let result = runner.run_bounded(request).map_err(|_| {
+        crate::failure(
+            "system proxy command failed",
+            "install the desktop backend or use a supported desktop",
+        )
+    })?;
+    if result.exit_code != Some(0) {
+        return Err(crate::failure(
+            "system proxy command returned failure",
+            "inspect desktop proxy permissions",
+        ));
+    }
+    Ok(result)
 }
 
 /// Builds a bounded argument vector from string slices.

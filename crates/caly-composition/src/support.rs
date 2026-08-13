@@ -11,18 +11,16 @@ use caly_domain::{
 };
 
 use super::{CompositionError, WallClock};
-use caly_application::{projection::ProjectionRuntime, service::RuntimeService};
+use caly_application::{
+    projection::ProjectionRuntime, runtime::TokioTaskFailure, service::RuntimeService,
+};
 
 pub(super) fn task_name(value: &'static str) -> Result<BoundedText<64>, CompositionError> {
     BoundedText::new(value.to_owned()).map_err(|_| CompositionError::TaskCapacity)
 }
 
 /// Infallible task name for the production code paths that take a `&'static
-/// str` literal and therefore cannot fail the bounded constructor. The
-/// previous `task_name(value).unwrap_or_else(|_| abort)` form was a
-/// process-kill fallback for a path that was never reachable; switching to
-/// `from_nonempty_clamped` removes the abort while keeping the same
-/// behaviour for the well-formed call sites.
+/// str` literal and therefore cannot fail the bounded constructor.
 pub(super) fn task_name_or_abort(value: &'static str) -> BoundedText<64> {
     caly_domain::BoundedText::from_nonempty_clamped(value.to_owned(), "_")
 }
@@ -33,6 +31,15 @@ pub(super) fn task_name_or_abort(value: &'static str) -> BoundedText<64> {
 /// call site passes a static reason string.
 pub(super) fn bounded_task_reason(value: &'static str) -> BoundedText<512> {
     caly_domain::BoundedText::from_nonempty_clamped(value.to_owned(), "task failed")
+}
+
+/// Bounded task-failure for a named owned task, shared by the dispatcher and
+/// the exit-monitor recovery paths.
+pub(super) fn task_failure(name: &'static str, reason: &'static str) -> TokioTaskFailure {
+    TokioTaskFailure::Task {
+        name: task_name_or_abort(name),
+        reason: bounded_task_reason(reason),
+    }
 }
 
 pub(super) fn initial_snapshot(daemon: DaemonInstanceId) -> Result<PresentationSnapshot, ()> {
@@ -122,11 +129,8 @@ pub(super) fn publish_controller_secret(secret: &str) {
 
 /// Persists the controller secret to `path` with `mode(0o600)` on the freshly
 /// created inode so no umask-derived default (typically 0o644) is ever
-/// observable. The previous `std::fs::write` + `set_permissions` sequence
-/// created the file with the umask-derived default, so any other local user
-/// could read the secret for the time between `write` and `set_permissions` —
-/// and if the second syscall silently failed, the file stayed world-readable.
-/// `OpenOptions::mode` closes that window with a single `O_CREAT` syscall.
+/// observable (the previous `write` + `set_permissions` sequence left a
+/// world-readable window and silently kept it if the chmod failed).
 ///
 /// Public-to-crate so tests can exercise the mode invariant on a tempdir
 /// instead of contaminating the real XDG state root.

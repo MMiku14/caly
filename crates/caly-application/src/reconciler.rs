@@ -1,12 +1,9 @@
 //! Pipeline reconcilers: event consumers that react to stage facts with the
-//! minimal follow-up command (2026-08-12 pipeline design, 刀 2).
-//!
-//! The config reconciler replaces the ad-hoc `config_mailbox` hook that used
-//! to sit inside `SubscriptionCommandHandler`: the handler now only
-//! publishes `SubscriptionRefreshed { changed }`, and this reconciler —
-//! subscribed to the shared bus — decides whether the kernel config must be
-//! re-rendered. The contract is explicit, observable (every event is logged
-//! by the bus) and trivially extensible to further reconcilers.
+//! minimal follow-up command (2026-08-12 pipeline design, 刀 2). The config
+//! reconciler replaces the ad-hoc `config_mailbox` hook inside
+//! `SubscriptionCommandHandler`: the handler only publishes
+//! `SubscriptionRefreshed { changed }`, and this reconciler decides whether
+//! the kernel config must be re-rendered — explicit, observable, extensible.
 
 use std::time::Duration;
 
@@ -52,21 +49,12 @@ impl ConfigReconciler {
     }
 
     fn run(&mut self) {
-        // `recv_timeout` returns `Timeout` on an idle interval — that is a
-        // normal wake-up to keep checking, not a reason to stop. Only a
-        // disconnected sender (bus dropped at daemon shutdown) ends the
-        // loop (2026-08-12: an earlier `while let Ok` version exited on the
-        // first idle second and the reconciler never saw refresh events).
-        loop {
-            match self.events.recv_timeout(EVENT_POLL_INTERVAL) {
-                Ok(DaemonEvent::SubscriptionRefreshed { changed: true }) => {
-                    self.enqueue_reload();
-                }
-                Ok(_) => {}
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
-                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
-            }
-        }
+        // `recv_timeout` returns `Timeout` on an idle interval — a normal
+        // wake-up, not a reason to stop; only a disconnected sender ends
+        // the loop (see `run_reconciler`).
+        crate::events::run_reconciler(&self.events, EVENT_POLL_INTERVAL, || {
+            self.enqueue_reload();
+        });
         tracing::debug!("config reconciler stopped");
     }
 

@@ -19,7 +19,7 @@ use caly_domain::{DialableNode, TunConfig};
 
 use crate::rules::{RouteRule, RuleSetSource};
 
-use super::{SingBoxOutboundError, SniffOptions, dns_render, node_to_json};
+use super::{dns_render, node_to_json, SingBoxOutboundError, SniffOptions};
 
 /// Runtime values rendered into the sing-box subscription document header.
 /// The bools are independent render switches (inbound binding, sniffing,
@@ -141,28 +141,14 @@ pub(crate) struct ClashApi {
 #[derive(Clone, Debug, Serialize)]
 #[serde(untagged)]
 pub(crate) enum Inbound {
-    Mixed(MixedInbound),
-    Transparent(TransparentInbound),
+    Plain(PlainInbound),
     Tun(TunInbound),
 }
 
-/// `mixed` inbound (local HTTP/SOCKS listener).
+/// `mixed` or transparent `redirect`/`tproxy` inbound — identical shape,
+/// the `type` field discriminates.
 #[derive(Clone, Debug, Serialize)]
-pub(crate) struct MixedInbound {
-    pub(crate) listen: String,
-    pub(crate) listen_port: u16,
-    #[serde(skip_serializing_if = "is_false")]
-    pub(crate) sniff: bool,
-    #[serde(skip_serializing_if = "is_false")]
-    pub(crate) sniff_override_destination: bool,
-    pub(crate) tag: &'static str,
-    #[serde(rename = "type")]
-    pub(crate) kind: &'static str,
-}
-
-/// Transparent `redirect`/`tproxy` inbound.
-#[derive(Clone, Debug, Serialize)]
-pub(crate) struct TransparentInbound {
+pub(crate) struct PlainInbound {
     pub(crate) listen: String,
     pub(crate) listen_port: u16,
     #[serde(skip_serializing_if = "is_false")]
@@ -255,38 +241,53 @@ pub(crate) fn mixed_listen(allow_lan: bool, bind_address: &str) -> &str {
 }
 
 /// The mixed inbound, or `None` when the port disables it.
+/// The mixed inbound, or `None` when the port disables it.
 pub(crate) fn mixed_inbound(
     port: u16,
     allow_lan: bool,
     bind_address: &str,
     sniff: SniffOptions,
 ) -> Option<Inbound> {
-    if port == 0 {
-        return None;
-    }
-    Some(Inbound::Mixed(MixedInbound {
-        listen: mixed_listen(allow_lan, bind_address).to_owned(),
-        listen_port: port,
-        sniff: sniff.enabled,
-        sniff_override_destination: sniff.enabled && sniff.override_destination,
-        tag: "caly-mixed-in",
-        kind: "mixed",
-    }))
+    plain_inbound(
+        mixed_listen(allow_lan, bind_address),
+        port,
+        "caly-mixed-in",
+        "mixed",
+        sniff,
+    )
 }
 
 /// The transparent redirect/tproxy inbound, or `None` when the port
 /// disables it.
 pub(crate) fn transparent_inbound(port: u16, tproxy: bool, sniff: SniffOptions) -> Option<Inbound> {
+    plain_inbound(
+        "0.0.0.0",
+        port,
+        "caly-transparent-in",
+        if tproxy { "tproxy" } else { "redirect" },
+        sniff,
+    )
+}
+
+/// Builds a plain (mixed/transparent) inbound, or `None` when the port
+/// disables it.
+fn plain_inbound(
+    listen: &str,
+    port: u16,
+    tag: &'static str,
+    kind: &'static str,
+    sniff: SniffOptions,
+) -> Option<Inbound> {
     if port == 0 {
         return None;
     }
-    Some(Inbound::Transparent(TransparentInbound {
-        listen: "0.0.0.0".to_owned(),
+    Some(Inbound::Plain(PlainInbound {
+        listen: listen.to_owned(),
         listen_port: port,
         sniff: sniff.enabled,
         sniff_override_destination: sniff.enabled && sniff.override_destination,
-        tag: "caly-transparent-in",
-        kind: if tproxy { "tproxy" } else { "redirect" },
+        tag,
+        kind,
     }))
 }
 

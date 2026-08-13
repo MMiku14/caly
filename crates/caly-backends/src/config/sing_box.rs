@@ -8,18 +8,13 @@
 
 use caly_coreconf::{
     rules::render_sing_box_rules,
-    sing_box::{SingBoxRenderTuning, sing_box_document},
+    sing_box::{sing_box_document, SingBoxRenderTuning},
 };
-use caly_corectl::{
-    contract::SpawnSpecFactory,
-    sing_box::SingBoxSpawnSpecFactory,
-    validation::{CoreValidator, LinuxCommandValidator, ValidationReport},
-};
+use caly_corectl::{sing_box::SingBoxSpawnSpecFactory, validation::ValidationReport};
 use caly_dns::DnsSettings;
 use caly_domain::{RoutingRule, RuleProvider, TunConfig};
-use caly_platform::{
-    command::LinuxCommandRunner,
-    fs::{AtomicFileContents, AtomicWritePlan, LinuxAtomicFileBackend, atomic_write},
+use caly_platform::fs::{
+    atomic_write, AtomicFileContents, AtomicWritePlan, LinuxAtomicFileBackend,
 };
 use caly_ports::{ActorFailure, CommittedConfig, ConfigActorPort, ConfigCandidate, PreparedConfig};
 use serde_json::Value;
@@ -296,47 +291,13 @@ impl SingBoxConfigBackend {
         config_path: PathBuf,
         generation: u64,
     ) -> Result<ValidationReport, ActorFailure> {
-        let factory = SingBoxSpawnSpecFactory::new(binary, workdir).map_err(|error| {
-            failure(
-                &format!("sing-box factory failed: {error}"),
-                "inspect binary path",
-            )
-        })?;
-        let spec = factory
-            .build_validation_spec(&caly_corectl::contract::RenderedConfigRef {
-                generation,
-                path: config_path,
-            })
-            .map_err(|error| {
-                failure(
-                    &format!("sing-box validation spec failed: {error}"),
-                    "inspect config",
-                )
-            })?;
-        let mut validator = LinuxCommandValidator::new(LinuxCommandRunner);
-        validator
-            .validate(spec, self.validation_timeout)
-            .map_err(|error| {
-                failure(
-                    &format!("sing-box validator failed: {error}"),
-                    "inspect binary",
-                )
-            })
-    }
-}
-
-/// Removes stale `config.validate.*` staging files left by a previous apply
-/// that crashed between staging and cleanup; the files are disposable copies
-/// that must never be mistaken for the committed generation.
-fn clean_stale_validation_files(workdir: &std::path::Path) {
-    let Ok(entries) = std::fs::read_dir(workdir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let name = entry.file_name();
-        if name.to_string_lossy().starts_with("config.validate.") {
-            let _ = std::fs::remove_file(entry.path());
-        }
+        super::mihomo_backend::validate_rendered_config(
+            "sing-box",
+            SingBoxSpawnSpecFactory::new(binary, workdir),
+            self.validation_timeout,
+            config_path,
+            generation,
+        )
     }
 }
 
@@ -359,23 +320,14 @@ impl ConfigActorPort for SingBoxConfigBackend {
         // Validate against the real binary before the candidate is considered
         // prepared, so a rejected config can never reach commit.
         if let Some(binary) = self.binary.clone() {
-            clean_stale_validation_files(&self.workdir);
-            let validation_path = self
-                .workdir
-                .join(format!("config.validate.{generation}.json"));
-            let write = AtomicWritePlan {
-                destination: validation_path.clone(),
-                temporary: self
-                    .workdir
-                    .join(format!("config.validate.{generation}.tmp")),
-                contents: contents.clone(),
-            };
-            atomic_write(&mut self.filesystem, write).map_err(|error| {
-                failure(
-                    &format!("sing-box validation staging failed: {error}"),
-                    "inspect working-directory ownership",
-                )
-            })?;
+            let validation_path = super::mihomo_backend::stage_validation(
+                "sing-box",
+                "json",
+                &mut self.filesystem,
+                &self.workdir,
+                &contents,
+                generation,
+            )?;
             let report = self.validate_config(
                 binary,
                 self.workdir.clone(),
@@ -387,19 +339,7 @@ impl ConfigActorPort for SingBoxConfigBackend {
                 self.workdir
                     .join(format!("config.validate.{generation}.tmp")),
             );
-            if !report.accepted {
-                let detail = report
-                    .diagnostic
-                    .as_ref()
-                    .map(|d| d.as_str().trim())
-                    .filter(|d| !d.is_empty())
-                    .map(|d| format!(": {d}"))
-                    .unwrap_or_default();
-                return Err(failure(
-                    &format!("generated config was rejected by the sing-box binary{detail}"),
-                    "inspect the validation diagnostic above or the base settings",
-                ));
-            }
+            super::mihomo_backend::ensure_accepted("sing-box", report)?;
         }
         self.prepared.insert(candidate.id, (generation, contents));
         Ok(PreparedConfig {
@@ -460,31 +400,14 @@ impl ConfigActorPort for SingBoxConfigBackend {
                 "reduce generated configuration",
             )
         })?;
-        let temporary = PathBuf::from(format!(
-            "{}.tmp.{}",
-            self.destination.display(),
-            prepared.generation
-        ));
-        atomic_write(
+        super::mihomo_backend::publish_and_record(
             &mut self.filesystem,
-            AtomicWritePlan {
-                destination: self.destination.clone(),
-                temporary,
-                contents: contents.clone(),
-            },
-        )
-        .map_err(|error| {
-            failure(
-                &format!("sing-box config publish failed: {error}"),
-                "inspect config filesystem ownership",
-            )
-        })?;
-        self.history.insert(prepared.generation, contents);
-        while self.history.len() > MAX_CONFIG_HISTORY {
-            if let Some(oldest) = self.history.keys().next().copied() {
-                self.history.remove(&oldest);
-            }
-        }
+            &self.destination,
+            contents,
+            prepared.generation,
+            &mut self.history,
+            "sing-box",
+        )?;
         self.generation = prepared.generation;
         Ok(CommittedConfig {
             candidate_id: prepared.candidate_id,

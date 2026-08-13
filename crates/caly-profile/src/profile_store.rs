@@ -138,15 +138,6 @@ impl ProfileStore {
             .join(format!("{id}.meta.toml")))
     }
 
-    /// Resolves the absolute path of a `Local` profile body
-    /// (relative path is joined to `config_root/profiles/`).
-    pub fn local_path(&self, path: &str) -> Result<PathBuf, ProfileStoreError> {
-        if path.contains("..") || path.starts_with('/') {
-            return Err(ProfileStoreError::InvalidId);
-        }
-        Ok(self.config_root.join("profiles").join(path))
-    }
-
     /// Reads the cached body. Returns `Ok(None)` when the cache
     /// file is missing (the operator has not run `refresh`
     /// yet); a corrupt metadata sidecar returns

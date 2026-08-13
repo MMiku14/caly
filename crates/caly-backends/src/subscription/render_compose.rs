@@ -16,15 +16,47 @@ use caly_coreconf::{
         render::proxy_to_entry,
     },
     sing_box::{
-        SingBoxOutboundError, SingBoxRenderTuning, node_to_json_string, nodes_to_outbounds,
-        sing_box_document,
+        node_to_json_string, nodes_to_outbounds, sing_box_document, SingBoxOutboundError,
+        SingBoxRenderTuning,
     },
 };
 use caly_domain::{BoundedVec, DialableNode, NodeId, SubscriptionId};
 use caly_subscription::{
-    SubscriptionDocument, decode_document, dedupe, dedupe_name_tags, parse_any_proxy_uri,
-    parse_clash_yaml, parse_sip008,
+    decode_document, dedupe, dedupe_name_tags, parse_any_proxy_uri, parse_clash_yaml, parse_sip008,
+    SubscriptionDocument,
 };
+
+/// Kernel-agnostic shape of the two subscription-render errors: both the
+/// Mihomo and sing-box error types expose `InvalidFormat`/`UnsupportedDocument`
+/// variants with the same meaning, which is all the shared extraction needs.
+trait DialableExtraction {
+    const INVALID_FORMAT: Self;
+    const UNSUPPORTED_DOCUMENT: Self;
+}
+
+impl DialableExtraction for SingBoxOutboundError {
+    const INVALID_FORMAT: Self = Self::InvalidFormat;
+    const UNSUPPORTED_DOCUMENT: Self = Self::UnsupportedDocument;
+}
+
+impl DialableExtraction for MihomoProxyError {
+    const INVALID_FORMAT: Self = Self::InvalidFormat;
+    const UNSUPPORTED_DOCUMENT: Self = Self::UnsupportedDocument;
+}
+
+/// Decodes a raw subscription body exactly once, then hands the document to
+/// `decode` — the single-pass entry point shared by the kernel renderers
+/// (see [`sing_box_outbound_map_from_document`] for the pipeline rule).
+fn decode_once<D, E>(
+    body: Vec<u8>,
+    decode: impl FnOnce(&SubscriptionDocument) -> Result<D, E>,
+) -> Result<D, E>
+where
+    E: DialableExtraction,
+{
+    let document = decode_document(body).map_err(|_| E::INVALID_FORMAT)?;
+    decode(&document)
+}
 
 /// Generates a bounded sing-box JSON document from URI subscription lines.
 pub fn uri_body_to_sing_box_json(
@@ -41,8 +73,9 @@ pub fn uri_body_to_sing_box_json_with(
     subscription: SubscriptionId,
     tuning: &SingBoxRenderTuning,
 ) -> Result<Vec<u8>, SingBoxOutboundError> {
-    let document = decode_document(body).map_err(|_| SingBoxOutboundError::InvalidFormat)?;
-    let nodes = dialable_nodes_for_sing_box(&document, subscription)?;
+    let nodes = decode_once(body, |document| {
+        dialable_nodes::<SingBoxOutboundError>(document, subscription)
+    })?;
     let outbounds = nodes_to_outbounds(nodes)?;
     sing_box_document(tuning, outbounds)
 }
@@ -68,9 +101,9 @@ pub fn uri_body_to_sing_box_outbound_map(
     body: &[u8],
     subscription: SubscriptionId,
 ) -> Result<(BTreeMap<NodeId, String>, Vec<SingBoxSkip>), SingBoxOutboundError> {
-    let document =
-        decode_document(body.to_vec()).map_err(|_| SingBoxOutboundError::InvalidFormat)?;
-    sing_box_outbound_map_from_document(&document, subscription)
+    decode_once(body.to_vec(), |document| {
+        sing_box_outbound_map_from_document(document, subscription)
+    })
 }
 
 /// [`uri_body_to_sing_box_outbound_map`] on an already-decoded document —
@@ -83,7 +116,7 @@ pub fn sing_box_outbound_map_from_document(
 ) -> Result<(BTreeMap<NodeId, String>, Vec<SingBoxSkip>), SingBoxOutboundError> {
     let mut map = BTreeMap::new();
     let mut skipped = Vec::new();
-    for node in dialable_nodes_for_sing_box(document, subscription)? {
+    for node in dialable_nodes::<SingBoxOutboundError>(document, subscription)? {
         if map.contains_key(&node.id()) {
             continue;
         }
@@ -122,41 +155,15 @@ pub fn sing_box_outbound_map_from_document(
     Ok((map, skipped))
 }
 
-/// Extracts dialable nodes from a decoded document, tolerating unparseable URI
-/// lines and parsing Clash-YAML bodies atomically. An unusable body is empty.
-fn dialable_nodes_for_sing_box(
-    document: &SubscriptionDocument,
-    subscription: SubscriptionId,
-) -> Result<Vec<DialableNode>, SingBoxOutboundError> {
-    match document {
-        SubscriptionDocument::UriLines { lines, .. } => Ok(lines
-            .iter()
-            .filter_map(|line| parse_any_proxy_uri(line.as_str(), subscription).ok())
-            .collect()),
-        SubscriptionDocument::ClashYaml(body) => {
-            let source = core::str::from_utf8(body.as_slice())
-                .map_err(|_| SingBoxOutboundError::InvalidFormat)?;
-            parse_clash_yaml(source, subscription)
-                .map_err(|_| SingBoxOutboundError::UnsupportedDocument)
-        }
-        SubscriptionDocument::Sip008(body) => {
-            let source = core::str::from_utf8(body.as_slice())
-                .map_err(|_| SingBoxOutboundError::InvalidFormat)?;
-            Ok(parse_sip008(source, subscription).0)
-        }
-        // URL lists are expanded by the daemon fetch path before rendering.
-        SubscriptionDocument::UrlList(_) => Err(SingBoxOutboundError::UnsupportedDocument),
-    }
-}
-
 /// Renders a Mihomo proxy section (proxies/groups/rules) from a subscription
 /// body, reusing the same dialable pipeline as the sing-box renderer.
 pub fn uri_body_to_mihomo_proxy_set(
     body: Vec<u8>,
     subscription: SubscriptionId,
 ) -> Result<MihomoProxySet, MihomoProxyError> {
-    let document = decode_document(body).map_err(|_| MihomoProxyError::InvalidFormat)?;
-    mihomo_proxy_set_from_document(&document, subscription)
+    decode_once(body, |document| {
+        mihomo_proxy_set_from_document(document, subscription)
+    })
 }
 
 /// [`uri_body_to_mihomo_proxy_set`] on an already-decoded document (single-
@@ -167,7 +174,7 @@ pub fn mihomo_proxy_set_from_document(
 ) -> Result<MihomoProxySet, MihomoProxyError> {
     // Dedupe by NodeId with the same first-seen order the projection uses, so
     // the `#N` suffix numbering assigned below matches what list UIs show.
-    let deduped = dedupe(dialable_nodes_for_mihomo(document, subscription)?)
+    let deduped = dedupe(dialable_nodes::<MihomoProxyError>(document, subscription)?)
         .map_err(|_| MihomoProxyError::InvalidFormat)?;
     let names = deduped
         .nodes
@@ -198,28 +205,25 @@ pub fn mihomo_proxy_set_from_document(
 
 /// Extracts dialable nodes from a decoded document, tolerating unparseable URI
 /// lines and parsing Clash-YAML bodies atomically. An unusable body is empty.
-fn dialable_nodes_for_mihomo(
+fn dialable_nodes<E: DialableExtraction>(
     document: &SubscriptionDocument,
     subscription: SubscriptionId,
-) -> Result<Vec<DialableNode>, MihomoProxyError> {
+) -> Result<Vec<DialableNode>, E> {
     match document {
         SubscriptionDocument::UriLines { lines, .. } => Ok(lines
             .iter()
             .filter_map(|line| parse_any_proxy_uri(line.as_str(), subscription).ok())
             .collect()),
         SubscriptionDocument::ClashYaml(body) => {
-            let source = core::str::from_utf8(body.as_slice())
-                .map_err(|_| MihomoProxyError::InvalidFormat)?;
-            parse_clash_yaml(source, subscription)
-                .map_err(|_| MihomoProxyError::UnsupportedDocument)
+            let source = core::str::from_utf8(body.as_slice()).map_err(|_| E::INVALID_FORMAT)?;
+            parse_clash_yaml(source, subscription).map_err(|_| E::UNSUPPORTED_DOCUMENT)
         }
         SubscriptionDocument::Sip008(body) => {
-            let source = core::str::from_utf8(body.as_slice())
-                .map_err(|_| MihomoProxyError::InvalidFormat)?;
+            let source = core::str::from_utf8(body.as_slice()).map_err(|_| E::INVALID_FORMAT)?;
             Ok(parse_sip008(source, subscription).0)
         }
         // URL lists are expanded by the daemon fetch path before rendering.
-        SubscriptionDocument::UrlList(_) => Err(MihomoProxyError::UnsupportedDocument),
+        SubscriptionDocument::UrlList(_) => Err(E::UNSUPPORTED_DOCUMENT),
     }
 }
 

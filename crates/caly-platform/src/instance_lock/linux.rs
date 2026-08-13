@@ -11,10 +11,10 @@ use std::{
 };
 
 use super::{
-    InstanceLock, InstanceLockBackend, LockOwner, reclaim::owner_token, reclaim::reclaim_stale,
+    reclaim::failure, reclaim::owner_token, reclaim::reclaim_stale, InstanceLock,
+    InstanceLockBackend, LockOwner,
 };
 use crate::PlatformFailure;
-use crate::bounded_text as bounded;
 
 /// File-backed instance-lock backend for Linux.
 #[derive(Default)]
@@ -209,20 +209,6 @@ fn ensure_parent_dir(path: &Path) -> std::io::Result<()> {
         std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))?;
     }
     Ok(())
-}
-
-fn failure(
-    operation: &'static str,
-    path: &Path,
-    message: String,
-    action: &'static str,
-) -> PlatformFailure {
-    PlatformFailure {
-        operation: bounded(operation.to_owned(), "lock-operation"),
-        resource: bounded(path.display().to_string(), "lock-path"),
-        message: bounded(message, "platform lock operation failed"),
-        suggested_action: bounded(action.to_owned(), "inspect the runtime lock"),
-    }
 }
 
 #[cfg(test)]

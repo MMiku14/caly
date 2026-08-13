@@ -17,54 +17,19 @@ use caly_domain::{BoundedText, CapabilitySet, NodeId};
 /// sing-box's Clash-compatible API is partial: groups and proxy listing work,
 /// but connection/traffic streaming and full URL-test semantics may be limited.
 fn sing_box_capabilities() -> CapabilitySet {
-    use caly_domain::{
-        BoundedVec, Capability, CapabilityStatus, ConfiguredSupport, RuntimeAvailability,
-    };
-    let supported = |capability| {
-        CapabilityStatus::new(
-            capability,
-            ConfiguredSupport::Supported,
-            RuntimeAvailability::NotRequired,
-            None,
-        )
-    };
-    let partial = |capability| {
-        CapabilityStatus::new(
-            capability,
-            ConfiguredSupport::Partial,
-            RuntimeAvailability::NotRequired,
-            None,
-        )
-    };
+    use crate::common::{capability_set, capability_status};
+    use caly_domain::{Capability, ConfiguredSupport};
     let statuses = vec![
-        supported(Capability::DnsConfiguration),
-        supported(Capability::RuntimeModeSwitch),
-        supported(Capability::ProxyGroups),
-        supported(Capability::ProxySelection),
-        supported(Capability::UrlTest),
-        supported(Capability::ConnectionClose),
-        partial(Capability::Connections),
-        partial(Capability::Traffic),
+        capability_status(Capability::DnsConfiguration, ConfiguredSupport::Supported),
+        capability_status(Capability::RuntimeModeSwitch, ConfiguredSupport::Supported),
+        capability_status(Capability::ProxyGroups, ConfiguredSupport::Supported),
+        capability_status(Capability::ProxySelection, ConfiguredSupport::Supported),
+        capability_status(Capability::UrlTest, ConfiguredSupport::Supported),
+        capability_status(Capability::ConnectionClose, ConfiguredSupport::Supported),
+        capability_status(Capability::Connections, ConfiguredSupport::Partial),
+        capability_status(Capability::Traffic, ConfiguredSupport::Partial),
     ];
-    // `BoundedVec::try_from_vec` and `CapabilitySet::new` are fallible, but
-    // the eight-element hardcoded `statuses` vector always fits the bounded
-    // capacity. The previous `unwrap_or_else(|_| process::abort)` form was a
-    // process-kill fallback for a path that was never reachable; switching
-    // to the `ok_or`-then-`expect` pattern keeps the same behaviour for the
-    // well-formed call sites while documenting the size invariant. Any
-    // future contributor who widens `statuses` past the bound will see
-    // the panic's backtrace rather than a silent abort.
-    // `BoundedVec::try_from_vec` and `CapabilitySet::new` are fallible, but
-    // the eight-element hardcoded `statuses` vector always fits the bounded
-    // capacity and contains no duplicate `Capability` values. The previous
-    // `unwrap_or_else(|_| process::abort)` form was a process-kill
-    // fallback for a path that was never reachable; switching to the
-    // `from_vec_truncated` + `from_bounded_dedup` infallible constructors
-    // keeps the same behaviour for the well-formed call sites while
-    // replacing the abort with a graceful truncation/dedup that survives
-    // any future contributor who widens the literal past the bound.
-    let values = BoundedVec::from_vec_truncated(statuses);
-    CapabilitySet::from_bounded_dedup(values)
+    capability_set(statuses)
 }
 
 /// sing-box's optional Clash-compatible controller.

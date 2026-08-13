@@ -11,8 +11,8 @@ use caly_backends::{
     SharedCoreLifecycleBackend,
 };
 
-use super::{bundled_binary, lifecycle_support};
-use crate::{CompositionError, rule_provider_materialize};
+use super::{kernel_binary, lifecycle_support};
+use crate::{rule_provider_materialize, CompositionError};
 
 /// TUN interface name shared by the platform owner and rendered inbounds.
 pub(super) const TUN_INTERFACE: &str = "caly0";
@@ -30,36 +30,18 @@ pub(super) fn build_dual_core_lifecycle(
     if configured_core == caly_domain::CoreKind::Xray {
         return Err(CompositionError::UnsupportedCore);
     }
-    let mihomo_binary = binaries
-        .mihomo
-        .clone()
-        .or_else(|| std::env::var_os("CALY_MIHOMO_BIN").map(PathBuf::from))
-        .unwrap_or_else(|| bundled_binary("mihomo"));
-    let sing_box_binary = binaries
-        .sing_box
-        .clone()
-        .or_else(|| std::env::var_os("CALY_SINGBOX_BIN").map(PathBuf::from))
-        .unwrap_or_else(|| bundled_binary("sing-box"));
-    // Materialise every `Inline` rule provider to a real
-    // file under the Mihomo work dir before the MIHOMO
-    // rendering pipeline sees them. Mihomo does not
-    // understand `type: inline` (caly-private extension),
-    // so the operator's payload must be on disk as a
-    // normal file by the time the rendering happens. The
-    // shape is pure: re-running the daemon produces the
-    // same files and the same in-memory providers (the
-    // rewrite happens here, not in the kernel's view of
-    // the world).
-    //
-    // sing-box walks a different path (#62): it keeps the
-    // ORIGINAL providers (no materialisation) because its
-    // rule-set renderer converts `type: inline` payloads
-    // to real sing-box inline rule-sets (headless rules)
-    // in `caly_coreconf::rules`. Pre-#62 the
-    // materialised Clash payload file was handed to
-    // sing-box as a `local` + `format: source` rule-set —
-    // a Clash YAML sing-box cannot parse — so any inline
-    // provider broke the sing-box boot outright.
+    let mihomo_binary = kernel_binary(binaries.mihomo.clone(), "CALY_MIHOMO_BIN", "mihomo");
+    let sing_box_binary = kernel_binary(binaries.sing_box.clone(), "CALY_SINGBOX_BIN", "sing-box");
+    // Materialise every `Inline` rule provider to a real file under the
+    // Mihomo work dir before the MIHOMO rendering pipeline sees them: mihomo
+    // does not understand `type: inline` (caly-private extension),
+    // so the payload must be on disk before rendering — a pure shape: the
+    // same files and in-memory providers on every re-run. sing-box walks a
+    // different path (#62): it keeps the ORIGINAL providers, because its
+    // rule-set renderer converts inline payloads to real sing-box inline
+    // rule-sets in `caly_coreconf::rules` (pre-#62 the materialised Clash
+    // payload file was handed over as a `local` + `format: source` rule-set
+    // — a Clash YAML sing-box cannot parse — breaking sing-box boot).
     let mihomo_work = work_dir("mihomo");
     let (rewritten_providers, _materialized) =
         rule_provider_materialize::materialize_inline_providers(
@@ -128,19 +110,12 @@ fn build_sing_box_lifecycle(
         .join("sing-box.json");
     let controller = controllers.sing_box.clone();
     if let Some(parent) = config.parent() {
-        std::fs::create_dir_all(parent).map_err(|error| {
-            tracing::error!(?error, path = ?parent, "cannot create the sing-box config directory");
-            CompositionError::BackendUnavailable
-        })?;
+        ensure_directory(parent, "the sing-box config directory")?;
     }
     // The core work directory hosts geoip/geosite data and sing-box state; it
     // must exist even when a committed config is reused, or `run` exits before
     // the controller becomes ready.
-    std::fs::create_dir_all(&working_directory)
-        .map_err(|error| {
-            tracing::error!(?error, path = ?working_directory, "cannot create the sing-box working directory");
-            CompositionError::BackendUnavailable
-        })?;
+    ensure_directory(&working_directory, "the sing-box working directory")?;
     if config.is_file() {
         // Re-key the reused generation for the rotated daemon secret.
         if let Some(secret) = &secret {
@@ -169,13 +144,31 @@ fn build_sing_box_lifecycle(
         tracing::error!(?error, binary = ?binary, "cannot build the sing-box lifecycle (is the binary installed and executable?)");
         CompositionError::BackendUnavailable
     })?;
-    Ok(caly_backends::SharedCoreLifecycleBackend::with_timeouts(
-        Arc::new(Mutex::new(CoreLifecycleBackend::SingBox(Arc::new(
-            Mutex::new(backend),
-        )))),
+    Ok(wrap_lifecycle(
+        CoreLifecycleBackend::SingBox(Arc::new(Mutex::new(backend))),
+        tuning,
+    ))
+}
+
+/// Creates a directory, mapping the failure to `BackendUnavailable` with the
+/// site-specific log line.
+fn ensure_directory(path: &std::path::Path, what: &str) -> Result<(), CompositionError> {
+    std::fs::create_dir_all(path).map_err(|error| {
+        tracing::error!(?error, path = ?path, "cannot create {what}");
+        CompositionError::BackendUnavailable
+    })
+}
+
+/// Wraps a concrete lifecycle backend in the shared, timeout-bounded handle.
+fn wrap_lifecycle(
+    backend: CoreLifecycleBackend,
+    tuning: &crate::RuntimeTuning,
+) -> SharedCoreLifecycleBackend {
+    SharedCoreLifecycleBackend::with_timeouts(
+        Arc::new(Mutex::new(backend)),
         std::time::Duration::from_millis(tuning.start_timeout_ms),
         std::time::Duration::from_millis(tuning.stop_timeout_ms),
-    ))
+    )
 }
 
 /// Renders the sing-box bootstrap document: the `CALY_SUBSCRIPTION_URL`
@@ -331,15 +324,9 @@ fn build_mihomo_lifecycle(
         .join("mihomo.yaml");
     let controller = controllers.mihomo.clone();
     let lifecycle_secret = secret.clone();
-    std::fs::create_dir_all(&working_directory).map_err(|error| {
-        tracing::error!(?error, path = ?working_directory, "cannot create Mihomo working directory");
-        CompositionError::BackendUnavailable
-    })?;
+    ensure_directory(&working_directory, "Mihomo working directory")?;
     if let Some(parent) = config.parent() {
-        std::fs::create_dir_all(parent).map_err(|error| {
-            tracing::error!(?error, path = ?parent, "cannot create the Mihomo config directory");
-            CompositionError::BackendUnavailable
-        })?;
+        ensure_directory(parent, "the Mihomo config directory")?;
     }
     // Reuse a previously applied generation but re-key its controller secret
     // so a restarted daemon (which rotates the secret) can authenticate.
@@ -369,11 +356,8 @@ fn build_mihomo_lifecycle(
         tracing::error!(?error, binary = ?binary, "cannot build Mihomo lifecycle (is the binary installed and executable?)");
         CompositionError::BackendUnavailable
     })?;
-    Ok(caly_backends::SharedCoreLifecycleBackend::with_timeouts(
-        Arc::new(Mutex::new(CoreLifecycleBackend::Mihomo(Arc::new(
-            Mutex::new(backend),
-        )))),
-        std::time::Duration::from_millis(tuning.start_timeout_ms),
-        std::time::Duration::from_millis(tuning.stop_timeout_ms),
+    Ok(wrap_lifecycle(
+        CoreLifecycleBackend::Mihomo(Arc::new(Mutex::new(backend))),
+        tuning,
     ))
 }

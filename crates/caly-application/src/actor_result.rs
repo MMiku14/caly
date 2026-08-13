@@ -2,7 +2,7 @@
 
 use caly_domain::{BoundedVec, OperationFailure, OperationId, PresentationDelta};
 
-use crate::runtime::{ActorIngress, ActorReceiver, InvalidMailboxCapacity, actor_mailbox};
+use crate::runtime::{actor_mailbox, ActorIngress, ActorReceiver, InvalidMailboxCapacity};
 
 /// Maximum projection slice replacements attached to one terminal report.
 pub const MAX_RESULT_DELTAS: usize = 16;
@@ -47,18 +47,11 @@ impl ActorReport {
 pub type ActorResultIngress = ActorIngress<ActorReport>;
 pub type ActorResultReceiver = ActorReceiver<ActorReport>;
 
-/// Ownership-preserving terminal report failure.
-///
-/// The unconsumed [`ActorReport`] is preserved on every variant so the
-/// caller can decide what to do with it (retry, requeue, log, ...). The
-/// previous form silently dropped the report on the `Result<(), ...>` path,
-/// which left the operation in a Started-but-not-Failed state: every owner
-/// handler propagated `HandlerReportError` upward and the dispatcher
-/// surfaced a fatal `TokioTaskFailure::Task`, taking the whole daemon
-/// down for what was originally a transient backpressure. Callers that
-/// drop the report here are now explicit about it (the warning at the
-/// call site, plus the diagnostic the caller can re-derive from the
-/// `operation_id` field on the unconsumed `ActorReport`).
+/// Terminal-report delivery failure. The unconsumed [`ActorReport`] is
+/// preserved on every variant so the caller decides what to do with it
+/// (retry, requeue, log). The previous `Result<(), ...>` form silently
+/// dropped the report, leaving the operation Started-not-Failed and the
+/// dispatcher fatal on transient backpressure.
 #[derive(Debug)]
 pub enum ActorResultSendError {
     Full(ActorReport),

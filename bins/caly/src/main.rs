@@ -49,18 +49,7 @@ fn main() -> ExitCode {
             crate::commands::history::maybe_record(&args, &invocation.command);
             run(invocation.command, invocation.options)
         }
-        Err(error) => {
-            let code = error.exit_code();
-            let _ = error.print();
-            // clap's own codes are 0 (help/version) and 2
-            // (usage). Folding an out-of-range code into 2
-            // would misreport an internal failure as usage;
-            // 1 (generic failure) is the honest fallback.
-            match u8::try_from(code) {
-                Ok(code) => ExitCode::from(code),
-                Err(_) => ExitCode::FAILURE,
-            }
-        }
+        Err(error) => crate::error::print_and_fold(&error),
     }
 }
 

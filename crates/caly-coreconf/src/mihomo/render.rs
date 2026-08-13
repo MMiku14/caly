@@ -1,6 +1,6 @@
 //! Mihomo per-proxy YAML rendering (protocol branches and shared helpers).
 
-use caly_domain::{BoundedText, DialableNode, Protocol, ShadowsocksCipher, VmessCipher};
+use caly_domain::{BoundedText, DialableNode, Protocol};
 
 use super::proxy_sections::{MihomoProxyEntry, MihomoProxyError, MihomoProxyTag};
 
@@ -57,7 +57,8 @@ pub fn proxy_to_entry(
             congestion,
         } => mihomo_tuic_lines(server, port, user_id, password, *congestion, &mut lines),
         Protocol::Http { username, password } => {
-            mihomo_http_lines(
+            mihomo_auth_lines(
+                "http",
                 server,
                 port,
                 username.as_ref(),
@@ -67,7 +68,8 @@ pub fn proxy_to_entry(
             mihomo_tls_lines(node, &mut lines);
         }
         Protocol::Socks5 { username, password } => {
-            mihomo_socks5_lines(
+            mihomo_auth_lines(
+                "socks5",
                 server,
                 port,
                 username.as_ref(),
@@ -87,36 +89,25 @@ pub fn proxy_to_entry(
     })
 }
 
-/// Appends Mihomo `http` proxy YAML lines (type, server, optional auth).
-fn mihomo_http_lines(
-    server: &str,
-    port: u16,
-    username: Option<&caly_domain::Credential>,
-    password: Option<&caly_domain::Credential>,
-    lines: &mut Vec<String>,
-) {
-    lines.push("      type: http".to_owned());
+/// Appends the type/server/port trio shared by every protocol branch
+/// (fixed emission order keeps re-renders byte-identical).
+fn base_lines(lines: &mut Vec<String>, kind: &str, server: &str, port: u16) {
+    lines.push(format!("      type: {kind}"));
     lines.push(format!("      server: {server}"));
     lines.push(format!("      port: {port}"));
-    if let Some(username) = username {
-        username.with_exposed(|value| lines.push(format!("      username: {}", yaml_quote(value))));
-    }
-    if let Some(password) = password {
-        password.with_exposed(|value| lines.push(format!("      password: {}", yaml_quote(value))));
-    }
 }
 
-/// Appends Mihomo `socks5` proxy YAML lines (type, server, optional auth).
-fn mihomo_socks5_lines(
+/// Appends Mihomo `http`/`socks5` proxy YAML lines (type, server,
+/// optional auth) — the two protocols share every field.
+fn mihomo_auth_lines(
+    kind: &str,
     server: &str,
     port: u16,
     username: Option<&caly_domain::Credential>,
     password: Option<&caly_domain::Credential>,
     lines: &mut Vec<String>,
 ) {
-    lines.push("      type: socks5".to_owned());
-    lines.push(format!("      server: {server}"));
-    lines.push(format!("      port: {port}"));
+    base_lines(lines, kind, server, port);
     if let Some(username) = username {
         username.with_exposed(|value| lines.push(format!("      username: {}", yaml_quote(value))));
     }
@@ -133,9 +124,7 @@ fn mihomo_vless_lines(
     flow: Option<&caly_domain::ProtocolText>,
     lines: &mut Vec<String>,
 ) {
-    lines.push("      type: vless".to_owned());
-    lines.push(format!("      server: {server}"));
-    lines.push(format!("      port: {port}"));
+    base_lines(lines, "vless", server, port);
     user_id.with_exposed(|uuid| lines.push(format!("      uuid: {uuid}")));
     lines.push("      udp: true".to_owned());
     if let Some(flow) = flow {
@@ -152,12 +141,13 @@ fn mihomo_vmess_lines(
     security: caly_domain::VmessCipher,
     lines: &mut Vec<String>,
 ) {
-    lines.push("      type: vmess".to_owned());
-    lines.push(format!("      server: {server}"));
-    lines.push(format!("      port: {port}"));
+    base_lines(lines, "vmess", server, port);
     user_id.with_exposed(|uuid| lines.push(format!("      uuid: {uuid}")));
     lines.push(format!("      alterId: {alter_id}"));
-    lines.push(format!("      cipher: {}", vmess_cipher(security)));
+    lines.push(format!(
+        "      cipher: {}",
+        crate::labels::vmess_cipher(security)
+    ));
 }
 
 /// Appends Mihomo `trojan` YAML lines (password).
@@ -167,9 +157,7 @@ fn mihomo_trojan_lines(
     password: &caly_domain::Credential,
     lines: &mut Vec<String>,
 ) {
-    lines.push("      type: trojan".to_owned());
-    lines.push(format!("      server: {server}"));
-    lines.push(format!("      port: {port}"));
+    base_lines(lines, "trojan", server, port);
     password.with_exposed(|value| lines.push(format!("      password: {}", yaml_quote(value))));
     lines.push("      udp: true".to_owned());
 }
@@ -187,10 +175,11 @@ fn mihomo_ss_lines(
     plugin: Option<&caly_domain::ShadowsocksPlugin>,
     lines: &mut Vec<String>,
 ) {
-    lines.push("      type: ss".to_owned());
-    lines.push(format!("      server: {server}"));
-    lines.push(format!("      port: {port}"));
-    lines.push(format!("      cipher: {}", ss_cipher(method)));
+    base_lines(lines, "ss", server, port);
+    lines.push(format!(
+        "      cipher: {}",
+        crate::labels::ss_cipher_label(method)
+    ));
     password.with_exposed(|value| lines.push(format!("      password: {}", yaml_quote(value))));
     if let Some(plugin) = plugin {
         lines.push(format!("      plugin: {}", yaml_quote(plugin.label())));
@@ -214,9 +203,7 @@ fn mihomo_hysteria2_lines(
     obfuscation: Option<&caly_domain::Credential>,
     lines: &mut Vec<String>,
 ) {
-    lines.push("      type: hysteria2".to_owned());
-    lines.push(format!("      server: {server}"));
-    lines.push(format!("      port: {port}"));
+    base_lines(lines, "hysteria2", server, port);
     password.with_exposed(|value| lines.push(format!("      password: {}", yaml_quote(value))));
     if let Some(up) = up_mbps {
         lines.push(format!("      up: {up}"));
@@ -241,14 +228,12 @@ fn mihomo_tuic_lines(
     congestion: caly_domain::CongestionControl,
     lines: &mut Vec<String>,
 ) {
-    lines.push("      type: tuic".to_owned());
-    lines.push(format!("      server: {server}"));
-    lines.push(format!("      port: {port}"));
+    base_lines(lines, "tuic", server, port);
     user_id.with_exposed(|uuid| lines.push(format!("      uuid: {uuid}")));
     password.with_exposed(|value| lines.push(format!("      password: {}", yaml_quote(value))));
     lines.push(format!(
         "      congestion-controller: {}",
-        congestion_label(congestion)
+        crate::labels::congestion_label(congestion)
     ));
 }
 
@@ -312,38 +297,6 @@ fn mihomo_transport_lines(node: &DialableNode, lines: &mut Vec<String>) {
         caly_domain::Transport::Quic => {
             lines.push("      network: quic".to_owned());
         }
-    }
-}
-
-/// Maps a Domain VMess cipher to its Mihomo cipher label.
-fn vmess_cipher(cipher: VmessCipher) -> &'static str {
-    match cipher {
-        VmessCipher::Auto => "auto",
-        VmessCipher::Aes128Gcm => "aes-128-gcm",
-        VmessCipher::Chacha20Poly1305 => "chacha20-poly1305",
-        VmessCipher::None => "none",
-    }
-}
-
-/// Maps a Domain Shadowsocks cipher to its Mihomo cipher label.
-/// Maps a Domain congestion-control choice to its Mihomo label.
-fn congestion_label(congestion: caly_domain::CongestionControl) -> &'static str {
-    match congestion {
-        caly_domain::CongestionControl::Bbr => "bbr",
-        caly_domain::CongestionControl::Cubic => "cubic",
-        caly_domain::CongestionControl::NewReno => "new_reno",
-    }
-}
-
-fn ss_cipher(cipher: ShadowsocksCipher) -> &'static str {
-    match cipher {
-        ShadowsocksCipher::Aes128Gcm => "aes-128-gcm",
-        ShadowsocksCipher::Aes256Gcm => "aes-256-gcm",
-        ShadowsocksCipher::Chacha20IetfPoly1305 => "chacha20-ietf-poly1305",
-        ShadowsocksCipher::Xchacha20IetfPoly1305 => "xchacha20-ietf-poly1305",
-        ShadowsocksCipher::Aes128Cfb => "aes-128-cfb",
-        ShadowsocksCipher::Aes256Cfb => "aes-256-cfb",
-        ShadowsocksCipher::None => "none",
     }
 }
 

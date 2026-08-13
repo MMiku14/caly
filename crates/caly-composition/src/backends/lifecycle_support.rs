@@ -21,11 +21,10 @@ pub(super) fn publish_owner_only_config(
     // A crashed writer can leave `{destination}.tmp.{generation}` behind;
     // with a fixed temporary name the next create-new (O_EXCL) would fail
     // forever and block every later publish (observed: a stale `mihomo.yaml
-    // .tmp.1` made `ApplicationComposition::start_runtime` fail with
-    // BackendUnavailable). The name is deterministic and this is the single
-    // writer for a given destination, so clearing a leftover before the
-    // transaction is safe; the atomic replace still guarantees the
-    // destination itself is never observed half-written.
+    // .tmp.1` made start_runtime fail with BackendUnavailable). The name is
+    // deterministic and this is the single writer, so clearing a leftover
+    // is safe; the atomic replace still guarantees the destination is never
+    // observed half-written.
     if temporary_path.exists() {
         std::fs::remove_file(&temporary_path).map_err(|error| {
             tracing::error!(?error, path = ?temporary_path, "cannot clear a stale config temp file");

@@ -3,6 +3,7 @@
 use caly_domain::{OperationFailure, OperationFailureCode, OperationId, PresentationDelta};
 
 use crate::actor_result::{ActorReport, ActorResultClient, ActorResultSendError, ResultDeltas};
+use crate::runtime::ActorDirective;
 
 use super::{ActorFailure, ActorFailureKind};
 
@@ -17,8 +18,7 @@ pub fn report_completed(
     operation_id: OperationId,
     deltas: Vec<PresentationDelta>,
 ) -> Result<(), HandlerReportError> {
-    let deltas =
-        ResultDeltas::try_from_vec(deltas).map_err(|_| HandlerReportError::DeltaCapacity)?;
+    let deltas = bounded_deltas(deltas)?;
     tracing::debug!(operation = ?operation_id, "operation completed");
     client
         .try_report(ActorReport::Completed {
@@ -34,8 +34,7 @@ pub fn report_failed(
     failure: ActorFailure,
     deltas: Vec<PresentationDelta>,
 ) -> Result<(), HandlerReportError> {
-    let deltas =
-        ResultDeltas::try_from_vec(deltas).map_err(|_| HandlerReportError::DeltaCapacity)?;
+    let deltas = bounded_deltas(deltas)?;
     let failure = operation_failure(failure);
     tracing::warn!(
         operation = ?operation_id,
@@ -52,6 +51,10 @@ pub fn report_failed(
         .map_err(HandlerReportError::ResultMailbox)
 }
 
+fn bounded_deltas(deltas: Vec<PresentationDelta>) -> Result<ResultDeltas, HandlerReportError> {
+    ResultDeltas::try_from_vec(deltas).map_err(|_| HandlerReportError::DeltaCapacity)
+}
+
 fn operation_failure(value: ActorFailure) -> OperationFailure {
     let code = match value.kind {
         ActorFailureKind::InvalidCandidate => OperationFailureCode::InvalidInput,
@@ -62,19 +65,10 @@ fn operation_failure(value: ActorFailure) -> OperationFailure {
         ActorFailureKind::GenerationConflict => OperationFailureCode::Conflict,
         ActorFailureKind::RecoveryRequired => OperationFailureCode::RecoveryRequired,
     };
-    // `value.message` and `value.suggested_action` are dynamic strings
-    // assembled by callers via `format!` and friends (e.g. the
-    // `tun_cap_net_admin_hint` interpolation in `MihomoLifecycleBackend`).
-    // They can easily exceed the 1 KiB / 512-byte bounded capacities on a
-    // chatty OS error. The previous `BoundedText::new(...)?` form was an
-    // early-return path that left the operation in a Started-but-not-Failed
-    // state — every owner handler propagates `HandlerReportError`, so a
-    // FailureText return means the operation would be forever stuck in
-    // `Running` until cancelled. `OperationFailure::clamped` keeps the
-    // same behaviour for the well-formed call sites and surfaces a stable
-    // `"_"` fallback for any future error variant that overshoots the
-    // bound, so the failure reaches `client.try_report` and the operation
-    // reaches a terminal state.
+    // `value.message`/`suggested_action` are dynamic strings that can
+    // exceed the bounded capacities; `OperationFailure::clamped` keeps the
+    // failure flowing to `try_report` (the old `BoundedText::new(...)?`
+    // early return left the operation Started-not-Failed).
     OperationFailure::clamped(
         code,
         value.message.as_str(),
@@ -96,10 +90,21 @@ pub fn report_outcome(
     }
 }
 
+/// Reports an outcome and yields the continue directive — the tail every owner
+/// handler ends with.
+pub fn finish_report(
+    client: &ActorResultClient,
+    operation_id: OperationId,
+    outcome: Result<Vec<PresentationDelta>, ActorFailure>,
+) -> Result<ActorDirective, HandlerReportError> {
+    report_outcome(client, operation_id, outcome)?;
+    Ok(ActorDirective::Continue)
+}
+
 #[cfg(test)]
 mod reporting_tests {
     use super::*;
-    use crate::actor_result::{ActorReport, ActorResultClient, actor_result_mailbox};
+    use crate::actor_result::{actor_result_mailbox, ActorReport, ActorResultClient};
     use std::time::Duration;
 
     /// Regression: the previous `report_failed` form propagated a

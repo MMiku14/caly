@@ -9,7 +9,8 @@ mod snapshot;
 
 pub use encode::{
     EncodeError, applied_to_wire, capabilities_to_wire, desired_to_wire, nodes_to_wire,
-    observed_to_wire, operation_status_to_wire, platform_to_wire, snapshot_to_wire,
+    observed_to_wire, operation_status_to_wire, platform_to_wire, proxy_groups_to_wire,
+    snapshot_to_wire,
 };
 pub use error::DecodeError;
 pub use event::{DecodedProjectionEvent, event_from_wire};

@@ -36,6 +36,19 @@ pub mod usage;
 // `usage::*` now; the re-exports make the path stable.
 pub use usage::{binary_override_outside_daemon, json_not_valid, json_with_completion};
 
+/// Prints the parse error and folds its exit code into an `ExitCode`. clap's
+/// own codes are 0 (help/version) and 2 (usage); folding an out-of-range code
+/// into 2 would misreport an internal failure as usage, so 1 (generic
+/// failure) is the honest fallback.
+pub fn print_and_fold(error: &clap::Error) -> std::process::ExitCode {
+    let code = error.exit_code();
+    let _ = error.print();
+    match u8::try_from(code) {
+        Ok(code) => std::process::ExitCode::from(code),
+        Err(_) => std::process::ExitCode::FAILURE,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

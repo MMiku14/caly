@@ -175,17 +175,13 @@ mod tests {
         let (sender, _receiver) = mpsc::sync_channel(1);
         let epoch = DaemonInstanceId::from_bytes([1; 16]);
         let sequencer = EventSequencer::new(epoch, 4, sender)?;
-        assert!(
-            sequencer
-                .replay_after(EventCursor::new(epoch, EventSequence::new(9)))
-                .is_none()
-        );
+        assert!(sequencer
+            .replay_after(EventCursor::new(epoch, EventSequence::new(9)))
+            .is_none());
         let other = DaemonInstanceId::from_bytes([2; 16]);
-        assert!(
-            sequencer
-                .replay_after(EventCursor::new(other, EventSequence::ZERO))
-                .is_none()
-        );
+        assert!(sequencer
+            .replay_after(EventCursor::new(other, EventSequence::ZERO))
+            .is_none());
         Ok(())
     }
 }

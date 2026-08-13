@@ -10,8 +10,13 @@ ROOT = Path(__file__).resolve().parents[1]
 ERRORS: list[str] = []
 
 
-def text(path: str) -> str:
-    return (ROOT / path).read_text(encoding="utf-8")
+def text(path: str) -> str | None:
+    """Read a workspace-relative source file; report (not crash on) misses."""
+    full = ROOT / path
+    if not full.exists():
+        ERRORS.append(f"{path}: missing source file")
+        return None
+    return full.read_text(encoding="utf-8")
 
 
 def compact(value: str) -> str:
@@ -19,7 +24,10 @@ def compact(value: str) -> str:
 
 
 def require_order(path: str, tokens: list[str]) -> None:
-    source = compact(text(path))
+    raw = text(path)
+    if raw is None:
+        return
+    source = compact(raw)
     cursor = 0
     for token in tokens:
         token = compact(token)
@@ -31,7 +39,10 @@ def require_order(path: str, tokens: list[str]) -> None:
 
 
 def require(path: str, token: str) -> None:
-    if compact(token) not in compact(text(path)):
+    raw = text(path)
+    if raw is None:
+        return
+    if compact(token) not in compact(raw):
         ERRORS.append(f"{path}: missing invariant token {token}")
 
 
@@ -48,9 +59,8 @@ def main() -> int:
     require_order("crates/caly-platform/src/recovery/mod.rs", [
         "store.load()", "RecoveryPhase::Restoring", "store.persist", "restore_proxy", "clear_if_owner",
     ])
-    require_order("crates/caly-profile/src/cache/mod.rs", [
-        "create_generation", "write_generation", "replace_current_manifest", "sync_cache_root",
-    ])
+    # 原 caly-profile cache/mod.rs(世代/驱逐机制)在工作区内零引用,收敛优化
+    # 时整体删除;其崩溃安全写序不变量由 platform/fs 与 backends/durable* 检查覆盖。
     require("crates/caly-platform/src/process/mod.rs", "UnixProcessGroup")
     require("crates/caly-platform/src/process/mod.rs", "WindowsJobObject")
     require("crates/caly-template/src/lib.rs", "TimedOut { kill:")

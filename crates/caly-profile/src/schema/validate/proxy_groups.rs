@@ -37,14 +37,10 @@ use super::{AppConfig, ConfigError};
 /// Domain errors are wrapped through [`From`] so the
 /// `?` operator at the call site stays one line.
 /// Relay-cycle walk state: the ids currently on the DFS stack
-/// (`in_stack`) and the ids fully explored (`done`). Mirrors the
-/// profile merge-cycle walker in `profiles.rs`; the two graphs are
-/// independent, so the state is deliberately per-module.
-#[derive(Default)]
-struct MergeWalkState {
-    in_stack: std::collections::HashSet<String>,
-    done: std::collections::HashSet<String>,
-}
+/// (`in_stack`) and the ids fully explored (`done`). Reuses the
+/// shared [`super::MergeWalkState`] defined for the profile-merge
+/// walker; the two graphs are independent, so only the state
+/// shape is shared.
 
 pub(super) fn validate_proxy_groups(config: &AppConfig) -> Result<(), ConfigError> {
     use super::super::proxy_group::ProxyGroupMemberConfig;
@@ -149,7 +145,7 @@ pub(super) fn validate_proxy_groups(config: &AppConfig) -> Result<(), ConfigErro
     // relay) revisits a *finished* node and must not be
     // reported as a cycle — same two-colour discipline
     // as the profile-merge walk.
-    let mut state = MergeWalkState::default();
+    let mut state = super::MergeWalkState::default();
     for group in &config.proxy_groups {
         if group.group_type != ProxyGroupTypeConfig::Relay {
             continue;
@@ -167,7 +163,7 @@ fn walk_relay(
     id: &str,
     declared: &std::collections::HashSet<String>,
     groups: &[super::super::ProxyGroupConfig],
-    state: &mut MergeWalkState,
+    state: &mut super::MergeWalkState,
 ) -> Result<(), ConfigError> {
     if state.done.contains(id) {
         return Ok(());

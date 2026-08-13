@@ -9,11 +9,8 @@ use std::{
 
 use caly_domain::BoundedText;
 use caly_template::{
-    MAX_TEMPLATE_CONTEXT_BYTES, MAX_TEMPLATE_SOURCE_BYTES, TemplateOutput, WorkerResponse,
-    decode_request, encode_response,
+    decode_request, encode_response, TemplateOutput, WorkerResponse, MAX_REQUEST_FRAME_BYTES,
 };
-
-const MAX_REQUEST_FRAME_BYTES: usize = 64 + MAX_TEMPLATE_SOURCE_BYTES + MAX_TEMPLATE_CONTEXT_BYTES;
 
 fn main() -> ExitCode {
     match run() {

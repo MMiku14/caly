@@ -45,7 +45,7 @@ use std::process::ExitCode;
 
 use crate::cli::SetSubCmd;
 use crate::client::subscription as cmd;
-use crate::commands::set::common::{ResourceVerb, run_standard_writer};
+use crate::commands::set::common::{run_standard_writer, ResourceVerb};
 use crate::output::CliOutput;
 
 /// The singular resource name used by
@@ -205,7 +205,7 @@ pub fn dispatch_with_paths(
             apply,
             dry_run: _,
         } => crud_and_converge(
-            options.clone(),
+            options,
             output,
             paths,
             &url,
@@ -238,7 +238,7 @@ pub fn dispatch_with_paths(
             apply,
             dry_run: _,
         } => crud_and_converge(
-            options.clone(),
+            options,
             output,
             paths,
             &url,
@@ -251,7 +251,7 @@ pub fn dispatch_with_paths(
             apply,
             dry_run: _,
         } => crud_and_converge(
-            options.clone(),
+            options,
             output,
             paths,
             &url,

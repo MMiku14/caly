@@ -111,7 +111,8 @@ fn parse_byte(pair: &[u8]) -> Result<u8, IdentityParseError> {
     Ok((high << 4) | low)
 }
 
-const fn hex_nibble(value: u8) -> Option<u8> {
+/// Maps one ASCII hex character to its 0–15 value.
+pub const fn hex_nibble(value: u8) -> Option<u8> {
     match value {
         b'0'..=b'9' => Some(value - b'0'),
         b'a'..=b'f' => Some(value - b'a' + 10),
@@ -122,7 +123,7 @@ const fn hex_nibble(value: u8) -> Option<u8> {
 
 #[cfg(test)]
 mod tests {
-    use super::{IdentityParseError, NodeId, to_hex};
+    use super::{to_hex, IdentityParseError, NodeId};
     use core::str::FromStr;
 
     #[test]

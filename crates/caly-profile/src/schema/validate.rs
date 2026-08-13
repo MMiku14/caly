@@ -16,6 +16,26 @@ mod profiles;
 mod providers;
 mod proxy_groups;
 
+/// Two-colour DFS bookkeeping shared across the profile-merge and relay-cycle
+/// walks: `in_stack` holds ids on the current recursion path (a revisit here is
+/// a genuine cycle), `done` holds fully explored ids (revisiting one through a
+/// diamond-shaped graph is not a cycle). The two graphs are independent, but
+/// the state shape is identical.
+#[derive(Default)]
+pub(super) struct MergeWalkState {
+    pub(super) in_stack: std::collections::HashSet<String>,
+    pub(super) done: std::collections::HashSet<String>,
+}
+
+/// Parses one routing-rule line through the domain parser, mapping failures
+/// to the same `ConfigError::InvalidRule` shape every rule loop reports.
+fn parse_rule(index: usize, line: &str) -> Result<caly_domain::RoutingRule, ConfigError> {
+    caly_domain::RoutingRule::from_clash_line(line).map_err(|error| ConfigError::InvalidRule {
+        index,
+        reason: error.to_string(),
+    })
+}
+
 /// Validates all cross-field bootstrap invariants of a parsed configuration.
 pub fn validate(config: &AppConfig) -> Result<(), ConfigError> {
     if config.schema_version != 1 {
@@ -112,12 +132,7 @@ fn validate_rules(config: &AppConfig) -> Result<(), ConfigError> {
         });
     }
     for (index, line) in config.rules.iter().enumerate() {
-        let rule = caly_domain::RoutingRule::from_clash_line(line).map_err(|error| {
-            ConfigError::InvalidRule {
-                index,
-                reason: error.to_string(),
-            }
-        })?;
+        let rule = parse_rule(index, line)?;
         if let caly_domain::RuleMatch::IpCidr(cidr) = &rule.matcher
             && !crate::rule_match::is_valid_cidr(cidr.as_str())
         {
@@ -213,12 +228,7 @@ fn validate_rule_provider_references(config: &AppConfig) -> Result<(), ConfigErr
         .map(|p| p.name.as_str())
         .collect();
     for (index, line) in config.rules.iter().enumerate() {
-        let rule = caly_domain::RoutingRule::from_clash_line(line).map_err(|error| {
-            ConfigError::InvalidRule {
-                index,
-                reason: error.to_string(),
-            }
-        })?;
+        let rule = parse_rule(index, line)?;
         if let caly_domain::RuleMatch::RuleSet(name) = &rule.matcher
             && !declared.contains(name.as_str())
         {

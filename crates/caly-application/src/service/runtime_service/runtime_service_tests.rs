@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    command_bus::{Command, command_bus},
+    command_bus::{command_bus, Command},
     events::SequencedEvent,
     operations::{CancelDecision, OperationStore},
     routing::{CommandSink, RouteDispatchError, RoutedCommand},
@@ -52,8 +52,8 @@ impl ProjectionService for TestProjection {
 }
 
 #[test]
-fn unsupported_command_is_rejected_before_operation_reservation()
--> Result<(), Box<dyn std::error::Error>> {
+fn unsupported_command_is_rejected_before_operation_reservation(
+) -> Result<(), Box<dyn std::error::Error>> {
     let (ingress, receiver) = command_bus(2)?;
     let admission = AdmissionController::new(OperationStore::new(4, 2)?, ingress, Clock(0));
     let mut service = RuntimeService::new_with_policy(

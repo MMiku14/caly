@@ -10,8 +10,8 @@ use caly_domain::{AppliedState, CapabilitySet, CoreKind, ObservedState, ProxyMod
 use caly_ports::{ActorFailure, CoreCommandBackend, CoreLifecycleCommandBackend};
 
 use super::{
-    CoreLifecycleBackend, MihomoCoreBackend, SharedCoreLifecycleBackend, SingBoxCoreBackend,
-    failure,
+    failure, CoreLifecycleBackend, MihomoCoreBackend, SharedCoreLifecycleBackend,
+    SingBoxCoreBackend,
 };
 
 // P7:cell 定义上移 caly-ports(actors 与组装根跨 crate 共享);此 re-export
@@ -51,6 +51,23 @@ impl DualCoreLifecycle {
             CoreKind::Mihomo | CoreKind::Xray => self.mihomo.clone(),
             CoreKind::SingBox => self.sing_box.clone(),
         }
+    }
+
+    /// Resolves the active kernel under a loud poisoned-lock guard and
+    /// dispatches one lifecycle operation to it (Audit #115: a poisoned
+    /// active-core lock must fail loudly instead of silently dispatching
+    /// to the wrong kernel).
+    fn dispatch_active(
+        &self,
+        op: impl FnOnce(SharedCoreLifecycleBackend) -> Result<AppliedState, ActorFailure>,
+    ) -> Result<AppliedState, ActorFailure> {
+        let kind = *self.active.lock().map_err(|poisoned| {
+            failure(
+                &format!("active-core lock poisoned ({poisoned})"),
+                "restart daemon",
+            )
+        })?;
+        op(self.backend_for(kind))
     }
 
     /// Stops the active kernel (if running), flips the active cell to `target`
@@ -122,33 +139,13 @@ impl CoreLifecycleCommandBackend for DualCoreLifecycle {
         DualCoreLifecycle::switch_to(self, target)
     }
     fn start(&mut self) -> Result<AppliedState, ActorFailure> {
-        // Audit #115: fail loudly on a poisoned lock instead of dispatching
-        // lifecycle calls to the wrong kernel.
-        let kind = *self.active.lock().map_err(|poisoned| {
-            failure(
-                &format!("active-core lock poisoned ({poisoned})"),
-                "restart daemon",
-            )
-        })?;
-        self.backend_for(kind).start()
+        self.dispatch_active(|mut backend| backend.start())
     }
     fn stop(&mut self) -> Result<AppliedState, ActorFailure> {
-        let kind = *self.active.lock().map_err(|poisoned| {
-            failure(
-                &format!("active-core lock poisoned ({poisoned})"),
-                "restart daemon",
-            )
-        })?;
-        self.backend_for(kind).stop()
+        self.dispatch_active(|mut backend| backend.stop())
     }
     fn restart(&mut self) -> Result<AppliedState, ActorFailure> {
-        let kind = *self.active.lock().map_err(|poisoned| {
-            failure(
-                &format!("active-core lock poisoned ({poisoned})"),
-                "restart daemon",
-            )
-        })?;
-        self.backend_for(kind).restart()
+        self.dispatch_active(|mut backend| backend.restart())
     }
 
     fn hot_reload(&self, config: &[u8], timeout: Duration) -> Result<(), String> {
@@ -195,12 +192,19 @@ impl SwitchableCoreBackend {
     }
 }
 
+/// Dispatches one command to the active core's adapter.
+macro_rules! active_command {
+    ($self:ident, $method:ident $(, $args:expr)*) => {
+        match $self.active_kind() {
+            CoreKind::Mihomo | CoreKind::Xray => $self.mihomo.$method($($args),*),
+            CoreKind::SingBox => $self.sing_box.$method($($args),*),
+        }
+    };
+}
+
 impl CoreCommandBackend for SwitchableCoreBackend {
     fn select_proxy(&mut self, node: caly_domain::NodeId) -> Result<AppliedState, ActorFailure> {
-        match self.active_kind() {
-            CoreKind::Mihomo | CoreKind::Xray => self.mihomo.select_proxy(node),
-            CoreKind::SingBox => self.sing_box.select_proxy(node),
-        }
+        active_command!(self, select_proxy, node)
     }
 
     fn select_proxy_group(
@@ -208,24 +212,15 @@ impl CoreCommandBackend for SwitchableCoreBackend {
         group: &str,
         member: &str,
     ) -> Result<AppliedState, ActorFailure> {
-        match self.active_kind() {
-            CoreKind::Mihomo | CoreKind::Xray => self.mihomo.select_proxy_group(group, member),
-            CoreKind::SingBox => self.sing_box.select_proxy_group(group, member),
-        }
+        active_command!(self, select_proxy_group, group, member)
     }
 
     fn close_all_connections(&mut self) -> Result<ObservedState, ActorFailure> {
-        match self.active_kind() {
-            CoreKind::Mihomo | CoreKind::Xray => self.mihomo.close_all_connections(),
-            CoreKind::SingBox => self.sing_box.close_all_connections(),
-        }
+        active_command!(self, close_all_connections)
     }
 
     fn set_mode(&mut self, mode: ProxyMode) -> Result<AppliedState, ActorFailure> {
-        match self.active_kind() {
-            CoreKind::Mihomo | CoreKind::Xray => self.mihomo.set_mode(mode),
-            CoreKind::SingBox => self.sing_box.set_mode(mode),
-        }
+        active_command!(self, set_mode, mode)
     }
 }
 

@@ -179,8 +179,8 @@ fn build_tun_owner(
 }
 
 /// Opens the owner-only durable TUN recovery store under the XDG state root.
-fn open_tun_recovery_store()
--> Result<caly_backends::platform::SharedTunRecoveryStore, CompositionError> {
+fn open_tun_recovery_store(
+) -> Result<caly_backends::platform::SharedTunRecoveryStore, CompositionError> {
     use caly_platform::recovery::{FileRecoveryStore, TunRecoveryRecord};
     let path = caly_platform::paths::AppPaths::from_env().tun_recovery_record_path();
     let store = FileRecoveryStore::<TunRecoveryRecord>::new(path).map_err(|error| {
@@ -191,8 +191,8 @@ fn open_tun_recovery_store()
 }
 
 /// Opens the owner-only durable proxy recovery store under the XDG state root.
-fn open_recovery_store()
--> Result<caly_backends::platform::SharedProxyRecoveryStore, CompositionError> {
+fn open_recovery_store(
+) -> Result<caly_backends::platform::SharedProxyRecoveryStore, CompositionError> {
     use caly_platform::recovery::FileRecoveryStore;
     let path = caly_platform::paths::AppPaths::from_env().recovery_record_path();
     let store = FileRecoveryStore::<caly_platform::recovery::ProxyRecoveryRecord>::new(path)
@@ -224,6 +224,14 @@ pub(super) fn bundled_binary(name: &str) -> PathBuf {
         std::env::current_dir().ok().as_deref(),
         std::env::current_exe().ok().as_deref(),
     )
+}
+
+/// Resolves a kernel binary: an explicit config path wins, then the
+/// `CALY_*_BIN` environment override, then the bundled development binary.
+pub(super) fn kernel_binary(explicit: Option<PathBuf>, env_var: &str, name: &str) -> PathBuf {
+    explicit
+        .or_else(|| std::env::var_os(env_var).map(PathBuf::from))
+        .unwrap_or_else(|| bundled_binary(name))
 }
 
 /// Resolves a bundled kernel binary: `vendor/bin/<name>` under the working
@@ -312,11 +320,7 @@ fn build_config_owner(
     .with_declared_groups(tuning.declared_groups.clone())
     .with_sniffer(tuning.sniffer.clone());
     if configured_core == caly_domain::CoreKind::Mihomo {
-        let binary = binaries
-            .mihomo
-            .clone()
-            .or_else(|| std::env::var_os("CALY_MIHOMO_BIN").map(PathBuf::from))
-            .unwrap_or_else(|| bundled_binary("mihomo"));
+        let binary = kernel_binary(binaries.mihomo.clone(), "CALY_MIHOMO_BIN", "mihomo");
         let working_directory = std::env::var_os("CALY_MIHOMO_DIR")
             .map_or_else(|| paths.core_work_dir().join("mihomo"), PathBuf::from);
         // Best-effort: seed the kind data a `mihomo -t` may need (geoip.metadb)
@@ -330,11 +334,7 @@ fn build_config_owner(
             std::time::Duration::from_secs(10),
         );
     } else {
-        let binary = binaries
-            .sing_box
-            .clone()
-            .or_else(|| std::env::var_os("CALY_SINGBOX_BIN").map(PathBuf::from))
-            .unwrap_or_else(|| bundled_binary("sing-box"));
+        let binary = kernel_binary(binaries.sing_box.clone(), "CALY_SINGBOX_BIN", "sing-box");
         let working_directory = std::env::var_os("CALY_SINGBOX_DIR")
             .map_or_else(|| paths.core_work_dir().join("sing-box"), PathBuf::from);
         sing_box = sing_box.with_validation(
@@ -346,18 +346,13 @@ fn build_config_owner(
     caly_backends::config::ActiveConfigBackend::new(active, mihomo, sing_box)
 }
 
-/// Copies a usable `geoip.metadb` into the Mihomo working directory if one is
-/// available (a system copy or a previously-downloaded cache) and the target
-/// lacks a complete copy. Mihomo fetches this database on demand when a
-/// validated config references GEOIP data; with a blocked network that fetch
-/// can hang past the bounded validator timeout. Best-effort: every failure is
-/// silently ignored so a missing database simply falls back to Mihomo's own
-/// behavior.
-///
-/// A pre-existing target file that is smaller than the 1 MiB sanity bound
-/// (a stub or a copy aborted mid-write) is treated as corrupt and removed
-/// before the source-copy loop, so a half-written target cannot masquerade
-/// as a healthy database and silently bypass a real seed.
+/// Best-effort seed of a usable `geoip.metadb` into the Mihomo working
+/// directory so a validated config referencing GEOIP data does not hang on
+/// a network fetch (a blocked network can stall past the bounded validator
+/// timeout). Every failure is silently ignored, falling back to Mihomo's own
+/// behavior; a pre-existing target smaller than the 1 MiB sanity bound (a
+/// stub or an aborted copy) is removed before the copy so it cannot
+/// masquerade as a healthy database.
 fn provision_geoip_metadb(working_directory: &std::path::Path) -> bool {
     provision_geoip_metadb_with_sources(working_directory, default_geoip_sources())
 }

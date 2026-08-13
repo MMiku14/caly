@@ -206,25 +206,7 @@ impl CoreCommandBackend for MihomoCoreBackend {
         // W3b: mihomo `/proxies` carries kernel-side membership (`all`) and
         // the current selection (`now`); failure degrades to an empty slice
         // (the declared group structure stays authoritative).
-        self.control
-            .list_proxy_groups(timeout)
-            .map(|groups| {
-                groups
-                    .into_iter()
-                    .map(|g| caly_domain::ProxyGroupView {
-                        name: g.name,
-                        kind: g.kind,
-                        selected: g.selected,
-                        members: g.members,
-                    })
-                    .collect()
-            })
-            .map_err(|_| {
-                crate::failure(
-                    "cannot list kernel proxy groups",
-                    "check the core is running",
-                )
-            })
+        proxy_group_views(self.control.list_proxy_groups(timeout))
     }
 }
 
@@ -339,26 +321,34 @@ impl CoreCommandBackend for SingBoxCoreBackend {
     ) -> Result<Vec<caly_domain::ProxyGroupView>, ActorFailure> {
         // The sing-box control surface proxies to the mihomo-compatible
         // inner control; the same `/proxies` enrichment applies.
-        self.control
-            .proxy_groups(timeout)
-            .map(|groups| {
-                groups
-                    .into_iter()
-                    .map(|g| caly_domain::ProxyGroupView {
-                        name: g.name,
-                        kind: g.kind,
-                        selected: g.selected,
-                        members: g.members,
-                    })
-                    .collect()
-            })
-            .map_err(|_| {
-                crate::failure(
-                    "cannot list kernel proxy groups",
-                    "check the core is running",
-                )
-            })
+        proxy_group_views(self.control.proxy_groups(timeout))
     }
+}
+
+/// Maps the kernel `/proxies` listing into domain group views; a controller
+/// failure degrades to an empty slice (the declared group structure stays
+/// authoritative).
+fn proxy_group_views(
+    result: Result<Vec<caly_corectl::contract::ProxyGroup>, caly_corectl::contract::KernelFailure>,
+) -> Result<Vec<caly_domain::ProxyGroupView>, ActorFailure> {
+    result
+        .map(|groups| {
+            groups
+                .into_iter()
+                .map(|g| caly_domain::ProxyGroupView {
+                    name: g.name,
+                    kind: g.kind,
+                    selected: g.selected,
+                    members: g.members,
+                })
+                .collect()
+        })
+        .map_err(|_| {
+            crate::failure(
+                "cannot list kernel proxy groups",
+                "check the core is running",
+            )
+        })
 }
 
 /// Resolves a node identity through the subscription-indexed registry.

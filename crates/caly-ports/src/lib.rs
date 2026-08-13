@@ -7,22 +7,12 @@
 //!
 //! # Why this crate is a separate workspace member
 //!
-//! Round 32 considered inlining the ports into `caly-application` (treating
-//! the trait boundaries as application-internal) and removing the workspace
-//! member. The inlining was attempted and reverted: back then
-//! `caly-application` prod-deps `caly-backends` (its composition subtree
-//! consumed the concrete backend structs) while `caly-backends` prod-deps
-//! the port traits here, so inlining would have formed a workspace
-//! dependency cycle that `cargo` rejects at the metadata level. The only
-//! viable shape was a third crate both sides depend on. This crate is that
-//! third crate.
-//!
-//! P7 (docs/crate-replan.md) completed the decoupling the revert was
-//! waiting for: the composition subtree moved to `caly-composition`, the two
-//! coordination cells moved up here (`cells`), and `caly-application`'s
-//! internal deps converged to `{caly-domain, caly-ports}`. The port crate
-//! stays a separate workspace member because `caly-backends` still must not
-//! depend on the use-case crate.
+//! `caly-backends` prod-deps the port traits, while the use-case crate is
+//! prod-deped by the backends' composition consumers; inlining the traits into
+//! either side would form a workspace dependency cycle (attempted in round 32
+//! and reverted; the P7 replan moved the composition subtree out of
+//! `caly-application`, but `caly-backends` still must not depend on the
+//! use-case crate). This crate is the shared third node both sides depend on.
 
 #![forbid(unsafe_code)]
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))] // #53: tests assert with unwrap/expect/panic; production lint stays deny

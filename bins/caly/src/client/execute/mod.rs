@@ -18,12 +18,12 @@ use std::process::ExitCode;
 use caly_protocol::{
     client::{ClientContract, ClientError, UdsClient},
     protocol::v2::{
-        ExecuteRequest, HandshakeRequest, ProtocolVersion, WireCommand, WireCoreAction,
-        all_features,
+        all_features, ExecuteRequest, HandshakeRequest, ProtocolVersion, WireCommand,
+        WireCoreAction,
     },
 };
 
-use super::{Query, output};
+use super::{output, Query};
 use crate::client::legacy::{ConfigCmd, CoreCmd};
 
 mod delay;
@@ -37,8 +37,8 @@ pub(crate) use sys::execute_sys_cmd;
 #[cfg(test)]
 use ops::resolved_core_kind;
 use ops::{
-    active_core_kind, execute_core, execute_lifecycle_immediate, execute_operation_with,
-    execute_select_proxy, execute_set_mode, execute_switch_core,
+    active_core_kind, execute_core, execute_operation, execute_select_proxy, execute_set_mode,
+    execute_switch_core,
 };
 
 /// Validates a single configuration file offline (`config check <file>`).
@@ -62,7 +62,7 @@ pub(crate) fn check_single_config_file(path: &std::path::Path, json: bool) -> Ex
 /// Executes a `config` family leaf.
 pub(super) fn execute_config_cmd(client: &mut UdsClient, cmd: ConfigCmd, json: bool) -> ExitCode {
     match cmd {
-        ConfigCmd::Apply => execute_operation_with(client, json, "apply configuration", |id| {
+        ConfigCmd::Apply => execute_operation(client, json, "apply configuration", false, |id| {
             WireCommand::ApplyConfig { candidate_id: id }
         }),
         // Intercepted as offline commands before connecting; defensive.
@@ -129,7 +129,7 @@ pub(super) fn execute_core_cmd(
             ..
         } => execute_delay_all(client, url.as_deref(), samples, json),
         CoreCmd::CloseConnections => {
-            execute_operation_with(client, json, "close all connections", |_| {
+            execute_operation(client, json, "close all connections", false, |_| {
                 WireCommand::CloseAllConnections
             })
         }
@@ -156,10 +156,11 @@ pub(super) fn execute_pick_proxy_group(
     member: &str,
     json: bool,
 ) -> ExitCode {
-    execute_operation_with(
+    execute_operation(
         client,
         json,
         &format!("pick `{member}` in group `{group}`"),
+        false,
         |_| WireCommand::SelectProxyGroup {
             group: group.to_owned(),
             member: member.to_owned(),
@@ -210,7 +211,7 @@ pub(super) fn execute_refresh_subscription(
             Err(error) => output::report_error(error, json),
         };
     }
-    execute_operation_with(client, json, "refresh subscription", move |_| {
+    execute_operation(client, json, "refresh subscription", false, move |_| {
         WireCommand::RefreshSubscription {
             subscription_id,
             force,
@@ -226,7 +227,9 @@ pub(super) fn execute_refresh_subscription(
 /// `stop_notifier` that closes the UDS socket right
 /// after this response is written).
 pub(super) fn execute_stop_daemon(client: &mut UdsClient, json: bool) -> ExitCode {
-    execute_lifecycle_immediate(client, json, "stop daemon", |_id| WireCommand::StopDaemon)
+    execute_operation(client, json, "stop daemon", true, |_id| {
+        WireCommand::StopDaemon
+    })
 }
 
 /// Round 17: `set daemon reload`. The server
@@ -235,7 +238,7 @@ pub(super) fn execute_stop_daemon(client: &mut UdsClient, json: bool) -> ExitCod
 /// on the application side, so the response is
 /// already terminal and polling is unnecessary.
 pub(super) fn execute_reload_config(client: &mut UdsClient, json: bool) -> ExitCode {
-    execute_lifecycle_immediate(client, json, "reload config", |_id| {
+    execute_operation(client, json, "reload config", true, |_id| {
         WireCommand::ReloadConfig
     })
 }

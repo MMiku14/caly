@@ -3,8 +3,8 @@
 use caly_domain::BoundedText;
 
 use super::{
-    MAX_TEMPLATE_CONTEXT_BYTES, MAX_TEMPLATE_OUTPUT_BYTES, MAX_TEMPLATE_SOURCE_BYTES,
     TemplateContext, TemplateOutput, TemplateRequest, TemplateResponse, TemplateSource,
+    MAX_TEMPLATE_CONTEXT_BYTES, MAX_TEMPLATE_OUTPUT_BYTES, MAX_TEMPLATE_SOURCE_BYTES,
 };
 
 const REQUEST_MAGIC: &[u8; 4] = b"CTWR";
@@ -62,12 +62,12 @@ pub fn decode_request(frame: &[u8]) -> Result<TemplateRequest, FrameError> {
     if &frame[..4] != REQUEST_MAGIC {
         return Err(FrameError::InvalidMagic);
     }
-    if read_u16(frame, 4)? != FRAME_VERSION {
+    if u16::from_be_bytes(read_array(frame, 4)?) != FRAME_VERSION {
         return Err(FrameError::UnsupportedVersion);
     }
-    let request_id = read_id(frame, 6)?;
-    let source_len = read_u32(frame, 22)? as usize;
-    let context_len = read_u32(frame, 26)? as usize;
+    let request_id = read_array(frame, 6)?;
+    let source_len = u32::from_be_bytes(read_array(frame, 22)?) as usize;
+    let context_len = u32::from_be_bytes(read_array(frame, 26)?) as usize;
     if source_len > MAX_TEMPLATE_SOURCE_BYTES {
         return Err(FrameError::SourceTooLarge);
     }
@@ -119,12 +119,12 @@ pub fn decode_response(frame: &[u8]) -> Result<WorkerResponse, FrameError> {
     if &frame[..4] != RESPONSE_MAGIC {
         return Err(FrameError::InvalidMagic);
     }
-    if read_u16(frame, 4)? != FRAME_VERSION {
+    if u16::from_be_bytes(read_array(frame, 4)?) != FRAME_VERSION {
         return Err(FrameError::UnsupportedVersion);
     }
-    let request_id = read_id(frame, 6)?;
+    let request_id = read_array(frame, 6)?;
     let status = frame[22];
-    let length = read_u32(frame, 23)? as usize;
+    let length = u32::from_be_bytes(read_array(frame, 23)?) as usize;
     let end = RESPONSE_HEADER_BYTES
         .checked_add(length)
         .ok_or(FrameError::LengthOverflow)?;
@@ -179,21 +179,9 @@ fn encode_response_payload(
     Ok(frame)
 }
 
-fn read_u16(frame: &[u8], offset: usize) -> Result<u16, FrameError> {
-    let bytes = frame.get(offset..offset + 2).ok_or(FrameError::TooShort)?;
-    let bytes: [u8; 2] = bytes.try_into().map_err(|_| FrameError::TooShort)?;
-    Ok(u16::from_be_bytes(bytes))
-}
-
-fn read_u32(frame: &[u8], offset: usize) -> Result<u32, FrameError> {
-    let bytes = frame.get(offset..offset + 4).ok_or(FrameError::TooShort)?;
-    let bytes: [u8; 4] = bytes.try_into().map_err(|_| FrameError::TooShort)?;
-    Ok(u32::from_be_bytes(bytes))
-}
-
-fn read_id(frame: &[u8], offset: usize) -> Result<[u8; 16], FrameError> {
+fn read_array<const N: usize>(frame: &[u8], offset: usize) -> Result<[u8; N], FrameError> {
     frame
-        .get(offset..offset + 16)
+        .get(offset..offset + N)
         .ok_or(FrameError::TooShort)?
         .try_into()
         .map_err(|_| FrameError::TooShort)

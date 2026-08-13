@@ -33,6 +33,23 @@ use serde_json::Value;
 /// fields (new optional keys) do not bump the version.
 pub const JSON_CONTRACT_VERSION: u32 = 1;
 
+/// Prints the §6.1 ok-envelope: `{"ok": true, "version": N, <payload>}`.
+/// serde_json's map is a BTreeMap (no `preserve_order`), so keys print
+/// sorted regardless of insertion order — merging the payload before
+/// printing is byte-identical to building the full object inline.
+pub(crate) fn print_ok_envelope(payload: serde_json::Value) {
+    let mut envelope = match payload {
+        serde_json::Value::Object(map) => map,
+        _ => serde_json::Map::new(),
+    };
+    envelope.insert("ok".to_owned(), serde_json::json!(true));
+    envelope.insert(
+        "version".to_owned(),
+        serde_json::json!(JSON_CONTRACT_VERSION),
+    );
+    println!("{}", serde_json::Value::Object(envelope));
+}
+
 /// The shared human message for an interactive picker cancelled by the
 /// operator (Esc). Single source of truth: `ops.rs` (generic pickers) and
 /// `set/core.rs` (core pickers) both print it.
@@ -246,12 +263,6 @@ fn truncate_visible(text: &str, max: usize) -> String {
     out
 }
 
-/// Renders the table as lines without printing so tests can
-/// assert the layout. TSV mode joins header and rows with TAB,
-/// verbatim — `caly … | cut -fN` scripts see stable bytes. Table
-/// mode right-pads each column to its widest visible cell (capped at
-/// [`MAX_TABLE_COLUMN_WIDTH`], overflow cells end with `…`), columns
-/// separated by two spaces (the v1 listing convention).
 #[must_use]
 /// Sanitizes one cell at the single render entry: TAB / CR / LF would
 /// break the TSV column shape (a cell containing `\t` silently adds a

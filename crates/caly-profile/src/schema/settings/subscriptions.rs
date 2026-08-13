@@ -124,9 +124,6 @@ pub enum ProviderKind {
 }
 
 impl SubscriptionConfig {
-    /// Returns every enabled source URL: the legacy `url` (always enabled when
-    /// set) followed by the enabled entries of `sources`. This is the full set
-    /// `caly sub refresh` fetches and merges.
     /// The auto-created enumeration default provider: contains every enabled
     /// subscription source URL — exactly the set `caly sub list` reads.
     /// Returns `None` when no source is configured, so a node-only config
@@ -141,6 +138,9 @@ impl SubscriptionConfig {
         })
     }
 
+    /// Returns every enabled source URL: the legacy `url` (always enabled when
+    /// set) followed by the enabled entries of `sources`. This is the full set
+    /// `caly sub refresh` fetches and merges.
     pub fn enabled_source_urls(&self) -> Vec<String> {
         let mut out = Vec::new();
         if let Some(url) = &self.url {
@@ -156,8 +156,6 @@ impl SubscriptionConfig {
     }
 }
 
-/// One user-defined rule provider. Mirrors `ProviderConfig` (a named source
-/// of proxy content): `RuleProvider` is a named source of rule content,
 impl Default for SubscriptionConfig {
     fn default() -> Self {
         Self {

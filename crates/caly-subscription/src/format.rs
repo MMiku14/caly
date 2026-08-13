@@ -1,6 +1,6 @@
 //! Bounded subscription format detection and document decoding.
 
-use base64::{Engine as _, engine::general_purpose};
+use base64::{engine::general_purpose, Engine as _};
 use caly_domain::{BoundedText, BoundedVec};
 
 /// Subscription body and decoded aggregate ceilings.
@@ -195,6 +195,22 @@ fn supported_scheme(scheme: Option<&str>) -> bool {
     )
 }
 
+/// Tries every common base64 alphabet in order (STANDARD, STANDARD_NO_PAD,
+/// URL_SAFE, URL_SAFE_NO_PAD) and returns the first successful decode.
+pub(crate) fn decode_base64_any(value: &[u8]) -> Option<Vec<u8>> {
+    for engine in [
+        &general_purpose::STANDARD,
+        &general_purpose::STANDARD_NO_PAD,
+        &general_purpose::URL_SAFE,
+        &general_purpose::URL_SAFE_NO_PAD,
+    ] {
+        if let Ok(decoded) = engine.decode(value) {
+            return Some(decoded);
+        }
+    }
+    None
+}
+
 fn decode_base64_aggregate(source: &str) -> Result<Vec<u8>, FormatError> {
     // Comment/banner lines (`# 收集整理测试: ...` is ubiquitous in
     // airport feeds) are not base64; filtering them mirrors the
@@ -210,20 +226,11 @@ fn decode_base64_aggregate(source: &str) -> Result<Vec<u8>, FormatError> {
     if estimated > MAX_SUBSCRIPTION_BODY_BYTES {
         return Err(FormatError::DecodedBodyTooLarge);
     }
-    for engine in [
-        &general_purpose::STANDARD,
-        &general_purpose::STANDARD_NO_PAD,
-        &general_purpose::URL_SAFE,
-        &general_purpose::URL_SAFE_NO_PAD,
-    ] {
-        if let Ok(decoded) = engine.decode(compact.as_bytes()) {
-            if decoded.len() > MAX_SUBSCRIPTION_BODY_BYTES {
-                return Err(FormatError::DecodedBodyTooLarge);
-            }
-            return Ok(decoded);
-        }
+    match decode_base64_any(compact.as_bytes()) {
+        Some(decoded) if decoded.len() <= MAX_SUBSCRIPTION_BODY_BYTES => Ok(decoded),
+        Some(_) => Err(FormatError::DecodedBodyTooLarge),
+        None => Err(FormatError::Base64Rejected),
     }
-    Err(FormatError::Base64Rejected)
 }
 
 fn parse_lines(source: &str) -> Result<SubscriptionLines, FormatError> {

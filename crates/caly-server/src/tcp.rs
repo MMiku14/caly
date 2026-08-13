@@ -3,10 +3,10 @@
 use std::{future::Future, net::SocketAddr};
 
 use caly_application::service::ApplicationServicePort;
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
 
 use crate::json::JsonService;
-use crate::uds::shutdown_signal;
+use crate::uds::serve_accept_loop;
 
 /// Serves the JSON-framed service over a TCP listener until a shutdown signal
 /// or the application-owned fatal future completes.
@@ -24,37 +24,12 @@ where
     F: Future<Output = ()> + Send + 'static,
 {
     let listener = TcpListener::bind(listen).await?;
-    let shutdown = async move {
-        tokio::select! {
-            () = shutdown_signal() => {},
-            () = application_shutdown => {},
-        }
+    let on_accept = |stream: TcpStream, service: JsonService<A>| {
+        tokio::spawn(async move {
+            service.handle_connection(stream).await;
+        });
     };
-    tokio::pin!(shutdown);
-    loop {
-        tokio::select! {
-            () = &mut shutdown => return Ok(()),
-            accepted = listener.accept() => {
-                let (stream, _) = match accepted {
-                    Ok(pair) => pair,
-                    Err(error) => {
-                        // Audit #92: a transient accept error (fd pressure:
-                        // EMFILE/ENFILE, a reset racing the accept, …) used
-                        // to tear down the whole TCP transport with `?`,
-                        // silently degrading the daemon to UDS-only. Log and
-                        // keep serving after a short backoff.
-                        tracing::warn!(%error, "TCP accept failed; backing off briefly");
-                        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                        continue;
-                    }
-                };
-                let service = service.clone();
-                tokio::spawn(async move {
-                    service.handle_connection(stream).await;
-                });
-            }
-        }
-    }
+    serve_accept_loop(&listener, service, application_shutdown, "TCP", on_accept).await
 }
 
 // ── TLS listener (`daemon.tls_enabled`, #57) ──────────────────
@@ -146,50 +121,39 @@ where
 {
     let acceptor = load_tls_acceptor(material)?;
     let listener = TcpListener::bind(listen).await?;
-    let shutdown = async move {
-        tokio::select! {
-            () = shutdown_signal() => {},
-            () = application_shutdown => {},
-        }
-    };
-    tokio::pin!(shutdown);
     // Audit #92: bound the pre-handshake state a slow-scan/DoS can hold —
     // every accepted connection used to spawn a task whose rustls handshake
     // had no timeout, so a peer holding the TCP connection open without
     // sending a ClientHello could pin tasks (and fds) indefinitely.
     let pre_auth = std::sync::Arc::new(tokio::sync::Semaphore::new(MAX_PRE_HANDSHAKE));
-    loop {
-        tokio::select! {
-            () = &mut shutdown => return Ok(()),
-            accepted = listener.accept() => {
-                let (stream, _) = match accepted {
-                    Ok(pair) => pair,
-                    Err(error) => {
-                        tracing::warn!(%error, "TLS TCP accept failed; backing off briefly");
-                        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                        continue;
-                    }
-                };
-                let Ok(permit) = pre_auth.clone().try_acquire_owned() else {
-                    tracing::warn!("pre-handshake connection budget exhausted; dropping a new TLS connection");
-                    continue;
-                };
-                let acceptor = acceptor.clone();
-                let service = service.clone();
-                tokio::spawn(async move {
-                    // A failed TLS handshake (plaintext probe,
-                    // handshake timeout, wrong protocol) just drops
-                    // the connection; the accept loop is unaffected.
-                    let handshake =
-                        tokio::time::timeout(TLS_HANDSHAKE_TIMEOUT, acceptor.accept(stream));
-                    if let Ok(Ok(tls_stream)) = handshake.await {
-                        service.handle_connection(tls_stream).await;
-                    }
-                    drop(permit);
-                });
+    let on_accept = move |stream: TcpStream, service: JsonService<A>| {
+        let pre_auth = pre_auth.clone();
+        let acceptor = acceptor.clone();
+        tokio::spawn(async move {
+            // A failed TLS handshake (plaintext probe,
+            // handshake timeout, wrong protocol) just drops
+            // the connection; the accept loop is unaffected.
+            let Ok(permit) = pre_auth.try_acquire_owned() else {
+                tracing::warn!(
+                    "pre-handshake connection budget exhausted; dropping a new TLS connection"
+                );
+                return;
+            };
+            let handshake = tokio::time::timeout(TLS_HANDSHAKE_TIMEOUT, acceptor.accept(stream));
+            if let Ok(Ok(tls_stream)) = handshake.await {
+                service.handle_connection(tls_stream).await;
             }
-        }
-    }
+            drop(permit);
+        });
+    };
+    serve_accept_loop(
+        &listener,
+        service,
+        application_shutdown,
+        "TLS TCP",
+        on_accept,
+    )
+    .await
 }
 
 /// Maximum concurrent connections still before/inside the TLS handshake

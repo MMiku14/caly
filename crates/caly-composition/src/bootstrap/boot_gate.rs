@@ -21,34 +21,12 @@ pub(super) fn boot_sequence(
 ) -> Result<(), CompositionError> {
     // Restore-first: re-apply any pending durable platform (proxy then TUN)
     // side effect before the core auto-starts or any new mutation begins.
-    // Recovery runs regardless of auto-start: a crashed daemon must restore
-    // its durable effects even when the core stays stopped.
-    //
-    // A failed restore degrades, does not die — matching `boot_system_proxy`
-    // and `boot_auto_start`. The record survives the failure and restore-first
-    // retries on the next boot; taking the whole control plane down for a
-    // temporarily unavailable desktop backend (gsettings hang, lost TUN
-    // permissions) would leave the operator unable to even run `caly status`.
-    let proxy_outcome = match platform.restore_first() {
-        Ok(outcome) => outcome,
-        Err(error) => {
-            tracing::warn!(
-                ?error,
-                "system-proxy restore-first failed; degrading and retrying on the next boot"
-            );
-            caly_platform::recovery::ProxyRecoveryOutcome::NothingPending
-        }
-    };
-    let tun_outcome = match tun.restore_first() {
-        Ok(outcome) => outcome,
-        Err(error) => {
-            tracing::warn!(
-                ?error,
-                "TUN restore-first failed; degrading and retrying on the next boot"
-            );
-            caly_platform::recovery::ProxyRecoveryOutcome::NothingPending
-        }
-    };
+    // Recovery runs regardless of auto-start — a crashed daemon must restore
+    // its durable effects even when the core stays stopped — and a failed
+    // restore degrades, not dies: the record survives for the next boot, so
+    // the operator can still reach `caly status`.
+    let proxy_outcome = restore_or_degrade(platform.restore_first(), "system-proxy");
+    let tun_outcome = restore_or_degrade(tun.restore_first(), "TUN");
     if matches!(
         tun_outcome,
         caly_platform::recovery::ProxyRecoveryOutcome::Restored
@@ -68,6 +46,24 @@ pub(super) fn boot_sequence(
         boot_auto_start(lifecycle, service, configured_core)
     } else {
         Ok(())
+    }
+}
+
+/// Restore-first with degradation: a failed durable restore logs a warning
+/// and leaves the record for the next boot instead of dying.
+fn restore_or_degrade(
+    outcome: Result<caly_platform::recovery::ProxyRecoveryOutcome, impl core::fmt::Debug>,
+    what: &str,
+) -> caly_platform::recovery::ProxyRecoveryOutcome {
+    match outcome {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            tracing::warn!(
+                ?error,
+                "{what} restore-first failed; degrading and retrying on the next boot"
+            );
+            caly_platform::recovery::ProxyRecoveryOutcome::NothingPending
+        }
     }
 }
 
@@ -199,7 +195,7 @@ fn boot_auto_start(
             if service
                 .projection_mut()
                 .publish(caly_domain::PresentationDelta::AppliedReplaced(
-                    stopped_applied_state(),
+                    caly_domain::AppliedState::stopped(),
                 ))
                 .is_err()
             {
@@ -208,12 +204,6 @@ fn boot_auto_start(
             Ok(())
         }
     }
-}
-
-/// The applied state projected when no core is running (failed or skipped
-/// auto-start).
-fn stopped_applied_state() -> caly_domain::AppliedState {
-    caly_domain::AppliedState::stopped()
 }
 
 /// Display label for the configured core kind in boot diagnostics.

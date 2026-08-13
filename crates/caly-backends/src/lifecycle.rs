@@ -319,7 +319,7 @@ const DEFAULT_START_TIMEOUT: Duration = Duration::from_secs(10);
 /// Budget for re-applying the persisted node selection after a core start.
 /// Strictly below the start budget so the restore cannot stall the lifecycle
 /// window; a failure here is logged, never fatal.
-const CONTROL_RESTORE_TIMEOUT: Duration = Duration::from_secs(3);
+pub(crate) const CONTROL_RESTORE_TIMEOUT: Duration = Duration::from_secs(3);
 const DEFAULT_STOP_TIMEOUT: Duration = Duration::from_secs(5);
 
 impl CoreLifecycleBackend {
@@ -523,7 +523,7 @@ fn stopped_state() -> Result<caly_domain::AppliedState, ActorFailure> {
     )
 }
 
-fn state(
+pub(crate) fn state(
     kind: caly_domain::CoreKind,
     run_state: caly_domain::CoreRunState,
     generation: u64,

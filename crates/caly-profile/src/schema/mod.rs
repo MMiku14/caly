@@ -345,12 +345,7 @@ pub enum ConfigError {
 
 /// Parses YAML and validates all cross-field bootstrap invariants.
 pub fn parse_and_validate_yaml(bytes: &[u8]) -> Result<AppConfig, ConfigError> {
-    if bytes.len() > MAX_CONFIG_BYTES {
-        return Err(ConfigError::TooLarge {
-            limit: MAX_CONFIG_BYTES,
-            actual: bytes.len(),
-        });
-    }
+    enforce_size_limit(bytes)?;
     let source = core::str::from_utf8(bytes).map_err(|_| ConfigError::ParseDetailsUnavailable)?;
     let config: AppConfig =
         serde_norway::from_str(source).map_err(|error| validate::parse_yaml_error(&error))?;
@@ -372,15 +367,20 @@ impl From<caly_domain::ProxyGroupError> for ConfigError {
 
 /// Parses JSON for compatibility and validates all cross-field invariants.
 pub fn parse_and_validate_json(bytes: &[u8]) -> Result<AppConfig, ConfigError> {
+    enforce_size_limit(bytes)?;
+    let config: AppConfig = serde_json::from_slice(bytes).map_err(validate::parse_error)?;
+    validate(&config)?;
+    Ok(config)
+}
+
+fn enforce_size_limit(bytes: &[u8]) -> Result<(), ConfigError> {
     if bytes.len() > MAX_CONFIG_BYTES {
         return Err(ConfigError::TooLarge {
             limit: MAX_CONFIG_BYTES,
             actual: bytes.len(),
         });
     }
-    let config: AppConfig = serde_json::from_slice(bytes).map_err(validate::parse_error)?;
-    validate(&config)?;
-    Ok(config)
+    Ok(())
 }
 
 /// Validates an already decoded configuration.

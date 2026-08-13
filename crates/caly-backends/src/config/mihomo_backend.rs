@@ -16,7 +16,7 @@ use caly_corectl::{
 };
 use caly_platform::{
     command::LinuxCommandRunner,
-    fs::{AtomicFileContents, LinuxAtomicFileBackend},
+    fs::{atomic_write, AtomicFileContents, AtomicWritePlan, LinuxAtomicFileBackend},
 };
 use caly_ports::ActorFailure;
 use std::{
@@ -287,33 +287,153 @@ impl MihomoConfigBackend {
         config_path: PathBuf,
         generation: u64,
     ) -> Result<ValidationReport, ActorFailure> {
-        let factory = MihomoSpawnSpecFactory::new(binary, workdir).map_err(|error| {
+        validate_rendered_config(
+            "Mihomo",
+            MihomoSpawnSpecFactory::new(binary, workdir),
+            self.validation_timeout,
+            config_path,
+            generation,
+        )
+    }
+}
+
+/// Publishes `contents` into `destination` atomically (creating the
+/// owner-only parent first), records it in the bounded rollback history and
+/// reports kernel-specific publish failures. Shared by the Mihomo and
+/// sing-box config backends; the caller owns the no-op comparison and the
+/// committed-generation bookkeeping.
+pub(super) fn publish_and_record(
+    filesystem: &mut impl caly_platform::fs::AtomicFileBackend,
+    destination: &std::path::Path,
+    contents: AtomicFileContents,
+    generation: u64,
+    history: &mut BTreeMap<u64, AtomicFileContents>,
+    label: &str,
+) -> Result<(), ActorFailure> {
+    // Ensure the owner-only destination directory exists before atomic publish.
+    if let Some(parent) = destination.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| {
             failure(
-                &format!("Mihomo factory failed: {error}"),
-                "inspect binary path",
+                &format!("cannot create config directory: {error}"),
+                "inspect config filesystem ownership",
             )
         })?;
-        let spec = factory
-            .build_validation_spec(&caly_corectl::contract::RenderedConfigRef {
-                generation,
-                path: config_path,
-            })
-            .map_err(|error| {
-                failure(
-                    &format!("Mihomo validation spec failed: {error}"),
-                    "inspect config",
-                )
-            })?;
-        let mut validator = LinuxCommandValidator::new(LinuxCommandRunner);
-        validator
-            .validate(spec, self.validation_timeout)
-            .map_err(|error| {
-                failure(
-                    &format!("Mihomo validator failed: {error}"),
-                    "inspect binary",
-                )
-            })
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700));
+        }
     }
+    let temporary = PathBuf::from(format!("{}.tmp.{generation}", destination.display()));
+    atomic_write(
+        filesystem,
+        AtomicWritePlan {
+            destination: destination.to_path_buf(),
+            temporary,
+            contents: contents.clone(),
+        },
+    )
+    .map_err(|error| {
+        failure(
+            &format!("{label} config publish failed: {error}"),
+            "inspect config filesystem ownership",
+        )
+    })?;
+    history.insert(generation, contents);
+    while history.len() > super::MAX_CONFIG_HISTORY {
+        if let Some(oldest) = history.keys().next().copied() {
+            history.remove(&oldest);
+        }
+    }
+    Ok(())
+}
+
+/// Runs bounded kernel validation on a staged config through the kernel's
+/// spawn-spec factory, with kernel-specific failure wording. Shared by the
+/// Mihomo (`-t`) and sing-box (`check`) config backends; the factory
+/// construction stays at the call site so each kernel keeps its own spawn
+/// spec error surface.
+pub(super) fn validate_rendered_config<F: SpawnSpecFactory>(
+    label: &str,
+    factory: Result<F, caly_corectl::contract::KernelFailure>,
+    timeout: Duration,
+    config_path: PathBuf,
+    generation: u64,
+) -> Result<ValidationReport, ActorFailure> {
+    let factory = factory.map_err(|error| {
+        failure(
+            &format!("{label} factory failed: {error}"),
+            "inspect binary path",
+        )
+    })?;
+    let spec = factory
+        .build_validation_spec(&caly_corectl::contract::RenderedConfigRef {
+            generation,
+            path: config_path,
+        })
+        .map_err(|error| {
+            failure(
+                &format!("{label} validation spec failed: {error}"),
+                "inspect config",
+            )
+        })?;
+    let mut validator = LinuxCommandValidator::new(LinuxCommandRunner);
+    validator.validate(spec, timeout).map_err(|error| {
+        failure(
+            &format!("{label} validator failed: {error}"),
+            "inspect binary",
+        )
+    })
+}
+
+/// Stages a rendered config into `config.validate.<generation>.<ext>` for
+/// real-binary validation, cleaning stale staging files first, with
+/// kernel-specific staging failure wording. Shared by the Mihomo and
+/// sing-box config backends; the caller runs the bounded binary check,
+/// cleans the staging files and maps the report via [`ensure_accepted`].
+pub(super) fn stage_validation(
+    label: &str,
+    extension: &str,
+    filesystem: &mut impl caly_platform::fs::AtomicFileBackend,
+    workdir: &std::path::Path,
+    contents: &AtomicFileContents,
+    generation: u64,
+) -> Result<PathBuf, ActorFailure> {
+    clean_stale_validation_files(workdir);
+    let validation_path = workdir.join(format!("config.validate.{generation}.{extension}"));
+    let write = AtomicWritePlan {
+        destination: validation_path.clone(),
+        temporary: workdir.join(format!("config.validate.{generation}.tmp")),
+        contents: contents.clone(),
+    };
+    atomic_write(filesystem, write).map_err(|error| {
+        failure(
+            &format!("{label} validation staging failed: {error}"),
+            "inspect working-directory ownership",
+        )
+    })?;
+    Ok(validation_path)
+}
+
+/// Maps a kernel validation report into the backend error, surfacing the
+/// kernel's own rejection reason instead of a generic "rejected" summary; the
+/// diagnostic is the stderr from the validation executable and directly
+/// points at the bad field.
+pub(super) fn ensure_accepted(label: &str, report: ValidationReport) -> Result<(), ActorFailure> {
+    if report.accepted {
+        return Ok(());
+    }
+    let detail = report
+        .diagnostic
+        .as_ref()
+        .map(|d| d.as_str().trim())
+        .filter(|d| !d.is_empty())
+        .map(|d| format!(": {d}"))
+        .unwrap_or_default();
+    Err(failure(
+        &format!("generated config was rejected by the {label} binary{detail}"),
+        "inspect the validation diagnostic above or the base settings",
+    ))
 }
 
 /// Removes stale `config.validate.*` staging files left by a previous apply

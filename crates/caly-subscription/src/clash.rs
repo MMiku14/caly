@@ -3,11 +3,11 @@
 use core::num::NonZeroU16;
 
 use caly_domain::{
-    CongestionControl, Credential, DialableNode, Endpoint, EndpointHost, MAX_PROXY_GROUP_MEMBERS,
-    MAX_PROXY_GROUPS, NodeBuilder, NodeSource, Protocol, ProtocolText, ProxyGroup,
-    ProxyGroupMember, ProxyGroupName, ProxyGroupNodeTag, ProxyGroupType, ProxyGroupUrl,
-    RoutingRule, ShadowsocksCipher, SubscriptionId, TlsConfig, Transport, TransportText,
-    TransportTextList, UrlTestConfig, VmessCipher, sanitized_display_name,
+    sanitized_display_name, CongestionControl, Credential, DialableNode, Endpoint, EndpointHost,
+    NodeBuilder, NodeSource, Protocol, ProtocolText, ProxyGroup, ProxyGroupMember, ProxyGroupName,
+    ProxyGroupNodeTag, ProxyGroupType, ProxyGroupUrl, RoutingRule, ShadowsocksCipher,
+    SubscriptionId, TlsConfig, Transport, TransportText, TransportTextList, UrlTestConfig,
+    VmessCipher, MAX_PROXY_GROUPS, MAX_PROXY_GROUP_MEMBERS,
 };
 use serde::Deserialize;
 
@@ -440,16 +440,11 @@ fn transport_text(index: usize, value: &str) -> Result<TransportText, ClashParse
 }
 
 fn clash_cipher(index: usize, value: Option<&str>) -> Result<ShadowsocksCipher, ClashParseError> {
-    match value {
-        Some("aes-128-gcm") => Ok(ShadowsocksCipher::Aes128Gcm),
-        Some("aes-256-gcm") => Ok(ShadowsocksCipher::Aes256Gcm),
-        Some("chacha20-ietf-poly1305") => Ok(ShadowsocksCipher::Chacha20IetfPoly1305),
-        Some("xchacha20-ietf-poly1305") => Ok(ShadowsocksCipher::Xchacha20IetfPoly1305),
-        Some("aes-128-cfb") => Ok(ShadowsocksCipher::Aes128Cfb),
-        Some("aes-256-cfb") => Ok(ShadowsocksCipher::Aes256Cfb),
-        Some("none") => Ok(ShadowsocksCipher::None),
-        _ => Err(ClashParseError::UnsupportedCipher { index }),
-    }
+    let Some(value) = value else {
+        return Err(ClashParseError::UnsupportedCipher { index });
+    };
+    crate::special_uri::shadowsocks_cipher(value)
+        .map_err(|_| ClashParseError::UnsupportedCipher { index })
 }
 
 fn congestion(_index: usize, value: Option<&str>) -> Result<CongestionControl, ClashParseError> {

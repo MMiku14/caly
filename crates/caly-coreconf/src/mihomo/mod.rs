@@ -282,6 +282,18 @@ fn render_sniffer(sniffer: &MihomoSniffer) -> String {
     yaml
 }
 
+/// Pushes a `key:` server-list block; empty groups are omitted (only
+/// `nameserver` is mandatory, enforced at `DnsSettings` build time).
+fn push_server_block(lines: &mut Vec<String>, key: &str, servers: &[caly_dns::Nameserver]) {
+    if servers.is_empty() {
+        return;
+    }
+    lines.push(format!("  {key}:"));
+    for server in servers {
+        lines.push(format!("    - {}", server.as_str()));
+    }
+}
+
 fn render_dns(dns: &DnsSettings, node_domains: &[String]) -> String {
     let mode = match dns.mode() {
         DnsMode::Standard => "none",
@@ -301,31 +313,13 @@ fn render_dns(dns: &DnsSettings, node_domains: &[String]) -> String {
     if dns.ipv6() {
         lines.push("  ipv6: true".to_owned());
     }
-    lines.push("  nameserver:".to_owned());
-    for server in dns.nameservers() {
-        lines.push(format!("    - {}", server.as_str()));
-    }
-    if !dns.fallback().is_empty() {
-        lines.push("  fallback:".to_owned());
-        for server in dns.fallback() {
-            lines.push(format!("    - {}", server.as_str()));
-        }
-    }
+    push_server_block(&mut lines, "nameserver", dns.nameservers());
+    push_server_block(&mut lines, "fallback", dns.fallback());
     // B4: the direct group was collected by the model but never rendered —
     // a dead configuration. mihomo's `direct-nameserver` feeds DIRECT-rule
     // domain lookups; emit it between fallback and default-nameserver.
-    if !dns.direct().is_empty() {
-        lines.push("  direct-nameserver:".to_owned());
-        for server in dns.direct() {
-            lines.push(format!("    - {}", server.as_str()));
-        }
-    }
-    if !dns.default().is_empty() {
-        lines.push("  default-nameserver:".to_owned());
-        for server in dns.default() {
-            lines.push(format!("    - {}", server.as_str()));
-        }
-    }
+    push_server_block(&mut lines, "direct-nameserver", dns.direct());
+    push_server_block(&mut lines, "default-nameserver", dns.default());
     if let Some(range) = dns.fake_ip_range() {
         lines.push(format!("  fake-ip-range: {}", range.as_str()));
     }

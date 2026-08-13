@@ -4,6 +4,7 @@
 //! strings so the on-wire JSON stays human-readable and debuggable (the
 //! protocol's replacement goal for binary gRPC framing).
 
+use caly_domain::hex_nibble;
 use serde::{Deserialize, Deserializer};
 
 /// Strict 32-hex-char identity parser; rejects any other spelling.
@@ -16,22 +17,13 @@ fn parse_hex(value: &str) -> Result<[u8; 16], String> {
     }
     let mut bytes = [0_u8; 16];
     for (index, pair) in value.as_bytes().chunks_exact(2).enumerate() {
-        let high =
-            nibble(pair[0]).ok_or_else(|| "identity contains a non-hex character".to_owned())?;
-        let low =
-            nibble(pair[1]).ok_or_else(|| "identity contains a non-hex character".to_owned())?;
+        let high = hex_nibble(pair[0])
+            .ok_or_else(|| "identity contains a non-hex character".to_owned())?;
+        let low = hex_nibble(pair[1])
+            .ok_or_else(|| "identity contains a non-hex character".to_owned())?;
         bytes[index] = (high << 4) | low;
     }
     Ok(bytes)
-}
-
-const fn nibble(value: u8) -> Option<u8> {
-    match value {
-        b'0'..=b'9' => Some(value - b'0'),
-        b'a'..=b'f' => Some(value - b'a' + 10),
-        b'A'..=b'F' => Some(value - b'A' + 10),
-        _ => None,
-    }
 }
 
 /// `[u8; 16]` identity as a hex string.

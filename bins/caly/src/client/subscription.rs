@@ -144,6 +144,17 @@ pub fn resolve_paths() -> AppPaths {
     AppPaths::from_env()
 }
 
+/// Prints a check/import failure in the requested mode and returns the
+/// generic-failure exit code (usage errors already folded to 2 upstream).
+fn report_sub_failure(error: &str, json: bool, verb: &str) -> std::process::ExitCode {
+    if json {
+        eprintln!("{}", serde_json::json!({ "ok": false, "error": error }));
+    } else {
+        eprintln!("subscription {verb} failed: {error}");
+    }
+    std::process::ExitCode::FAILURE
+}
+
 /// Loads the active `AppConfig` from `paths` (so the
 /// tests can inject a hermetic root via
 /// `AppPaths::from_env_vars(&test_env())`).
@@ -623,6 +634,16 @@ fn offline_cache_stats(url: &str) -> (usize, Vec<String>, Option<u64>, bool) {
 #[cfg(test)]
 mod list_render_tests;
 
+/// The usability exit code: dialable nodes or a URL list → 0, else 1
+/// (the document parsed but offers nothing refreshable).
+fn usable_exit(usable: bool) -> std::process::ExitCode {
+    if usable {
+        std::process::ExitCode::SUCCESS
+    } else {
+        std::process::ExitCode::from(1)
+    }
+}
+
 /// `show sub parse <path>` — offline subscription tree (W3a,
 /// cli-v3-design.md G1/§5.3/§6.1). Human default is the three-zone
 /// entry tree; `--json` is the §6.1 contract. url-list and ssr-only
@@ -632,7 +653,7 @@ pub fn check_subscription(
     userinfo: Option<&str>,
     json: bool,
 ) -> std::process::ExitCode {
-    use std::process::ExitCode;
+    
     match crate::subscription::parse_subscription_tree(path, userinfo) {
         Ok(outcome) => {
             if json {
@@ -641,22 +662,12 @@ pub fn check_subscription(
                 print!("{}", crate::subscription::render_tree_human(&outcome));
             }
             if outcome.is_usable() {
-                ExitCode::SUCCESS
+                usable_exit(true)
             } else {
-                ExitCode::from(1)
+                usable_exit(false)
             }
         }
-        Err(error) => {
-            if json {
-                eprintln!(
-                    "{}",
-                    serde_json::json!({ "ok": false, "error": error.clone() })
-                );
-            } else {
-                eprintln!("subscription check failed: {error}");
-            }
-            ExitCode::FAILURE
-        }
+        Err(error) => report_sub_failure(&error, json, "check"),
     }
 }
 
@@ -692,23 +703,9 @@ pub fn import_preview(
                     );
                 }
             }
-            if crate::subscription::is_usable(&summary) {
-                ExitCode::SUCCESS
-            } else {
-                ExitCode::from(1)
-            }
+            usable_exit(crate::subscription::is_usable(&summary))
         }
-        Err(error) => {
-            if json {
-                eprintln!(
-                    "{}",
-                    serde_json::json!({ "ok": false, "error": error.clone() })
-                );
-            } else {
-                eprintln!("subscription import failed: {error}");
-            }
-            ExitCode::FAILURE
-        }
+        Err(error) => report_sub_failure(&error, json, "import"),
     }
 }
 

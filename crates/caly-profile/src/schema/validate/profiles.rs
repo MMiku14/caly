@@ -4,7 +4,7 @@
 //! here is reached from `super::validate` and turns a
 //! parseable-but-unusable configuration into an explicit boot failure.
 
-use super::{AppConfig, ConfigError};
+use super::{AppConfig, ConfigError, MergeWalkState};
 
 /// Validates every `profiles:` entry. Ids must be unique and
 /// path-safe; `Remote` URLs must be public http(s); merge parts
@@ -60,7 +60,7 @@ pub(super) fn validate_profile_source(
     source: &super::super::ProfileSourceConfig,
 ) -> Result<(), ConfigError> {
     use super::super::ProfileSourceConfig;
-    use caly_domain::{ProfileError, is_path_safe_component};
+    use caly_domain::{is_path_safe_component, ProfileError};
     match source {
         ProfileSourceConfig::Local { path } => {
             if path.trim().is_empty() {
@@ -159,12 +159,8 @@ pub(super) fn validate_profile_merge_cycles(
 /// holds the ids on the current recursion path (a revisit *here* is a
 /// genuine cycle), `done` holds fully explored ids (safe to skip, and
 /// — crucially — revisiting one through a diamond-shaped merge is *not*
-/// a cycle).
-#[derive(Default)]
-struct MergeWalkState {
-    in_stack: std::collections::HashSet<String>,
-    done: std::collections::HashSet<String>,
-}
+/// a cycle). Defined once in the parent module; the proxy-group walk
+/// reuses the same state shape.
 
 fn walk_merge(
     id: &str,

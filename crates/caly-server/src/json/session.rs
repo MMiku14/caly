@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use caly_domain::UnixMillis;
+use caly_domain::{hex_nibble, UnixMillis};
 use caly_protocol::protocol::v2::{FeatureList, ProtocolVersion, WireId};
 
 pub const MAX_PROTOCOL_SESSIONS: usize = 1_024;
@@ -138,20 +138,11 @@ pub fn parse_session_token(value: &str) -> Result<WireId, SessionError> {
     }
     let mut token = [0_u8; 16];
     for (index, pair) in value.as_bytes().chunks_exact(2).enumerate() {
-        let high = nibble(pair[0]).ok_or(SessionError::InvalidToken)?;
-        let low = nibble(pair[1]).ok_or(SessionError::InvalidToken)?;
+        let high = hex_nibble(pair[0]).ok_or(SessionError::InvalidToken)?;
+        let low = hex_nibble(pair[1]).ok_or(SessionError::InvalidToken)?;
         token[index] = (high << 4) | low;
     }
     Ok(token)
-}
-
-const fn nibble(value: u8) -> Option<u8> {
-    match value {
-        b'0'..=b'9' => Some(value - b'0'),
-        b'a'..=b'f' => Some(value - b'a' + 10),
-        b'A'..=b'F' => Some(value - b'A' + 10),
-        _ => None,
-    }
 }
 
 #[cfg(test)]

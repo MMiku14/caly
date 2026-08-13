@@ -325,8 +325,8 @@ fn fake_ip_filter_auto_merges_node_domains_and_skips_ips() -> Result<(), Box<dyn
 }
 
 #[test]
-fn server_domains_dedupes_and_drops_user_filter_duplicates()
--> Result<(), Box<dyn std::error::Error>> {
+fn server_domains_dedupes_and_drops_user_filter_duplicates(
+) -> Result<(), Box<dyn std::error::Error>> {
     use caly_dns::{DnsMode, DnsSettingsBuilder};
     let dns = DnsSettingsBuilder::new()
         .enabled(true)

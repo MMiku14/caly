@@ -11,8 +11,8 @@ use crate::{
 };
 
 use super::{
+    reporting::{finish_report, HandlerReportError},
     SubscriptionCommandBackend,
-    reporting::{HandlerReportError, report_outcome},
 };
 /// Nonblocking backend owning fetch/parse/cache generation work.
 pub struct SubscriptionCommandHandler<B> {
@@ -99,16 +99,15 @@ impl<B: SubscriptionCommandBackend> ActorHandler<RoutedCommand> for Subscription
                     Vec::new()
                 }
             });
-        report_outcome(&self.results, operation_id, outcome)
-            .map_err(SubscriptionHandlerError::Report)?;
-        Ok(ActorDirective::Continue)
+        finish_report(&self.results, operation_id, outcome)
+            .map_err(SubscriptionHandlerError::Report)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::actor_result::{ActorReport, actor_result_mailbox};
+    use crate::actor_result::{actor_result_mailbox, ActorReport};
     use crate::command_bus::CommandEnvelope;
     use crate::operations::OperationCancellationToken;
     use std::time::Duration;

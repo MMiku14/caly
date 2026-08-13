@@ -579,8 +579,6 @@ fn reaches_back(
 /// members indented with `├─`/`└─`), then 未入组节点 zone, then 规则区
 /// (offline faces only). A document without groups degenerates to a
 /// protocol-only listing.
-/// Left-pads the `[kind]` badge to the 10-column badge lane followed
-/// by two spaces, so names align across badge widths (cli-v3-design.md
 /// Left-pads the `[kind]` badge to the 13-column badge lane followed
 /// by two spaces, so names align across badge widths (cli-v3-design.md
 /// §5.3). The lane is 13 because the widest badge — `[loadbalance]` at
@@ -739,7 +737,7 @@ fn render_members(out: &mut String, group: &TreeGroup, cycle_flags: &[bool]) {
             "├─"
         };
         match member {
-            TreeMember::Node { name, kind } => {
+            TreeMember::Node { name, kind } | TreeMember::Builtin { name, kind } => {
                 let _ = std::fmt::Write::write_fmt(
                     out,
                     format_args!("  {branch} {}{}\n", badge_lane(kind), strip_controls(name)),
@@ -756,22 +754,16 @@ fn render_members(out: &mut String, group: &TreeGroup, cycle_flags: &[bool]) {
                         ),
                     );
                 } else {
+                    let display = strip_controls(name);
                     let _ = std::fmt::Write::write_fmt(
                         out,
                         format_args!(
-                            "  {branch} {}{} → 嵌套组(见 {})\n",
+                            "  {branch} {}{} → 嵌套组(见 {display})\n",
                             badge_lane(kind),
-                            strip_controls(name),
-                            strip_controls(name)
+                            display
                         ),
                     );
                 }
-            }
-            TreeMember::Builtin { name, kind } => {
-                let _ = std::fmt::Write::write_fmt(
-                    out,
-                    format_args!("  {branch} {}{}\n", badge_lane(kind), strip_controls(name)),
-                );
             }
             TreeMember::Unknown { name } => {
                 let _ = std::fmt::Write::write_fmt(
@@ -817,11 +809,12 @@ pub(crate) fn render_json(tree: &EntryTree) -> serde_json::Value {
             .members
             .iter()
             .map(|member| match member {
-                TreeMember::Node { name, kind } => json!({ "name": name, "kind": kind }),
+                TreeMember::Node { name, kind } | TreeMember::Builtin { name, kind } => {
+                    json!({ "name": name, "kind": kind })
+                }
                 TreeMember::Group { name, kind } => {
                     json!({ "name": name, "kind": kind, "ref": true })
                 }
-                TreeMember::Builtin { name, kind } => json!({ "name": name, "kind": kind }),
                 TreeMember::Unknown { name } => json!({ "name": name, "kind": "unknown" }),
             })
             .collect();

@@ -11,15 +11,14 @@ use caly_application::{
     },
     command_bus::CommandReceiver,
     projection::ProjectionRuntime,
-    runtime::{ActorHandler, ActorLoopExit, TokioTaskFailure, TokioTaskGroup, run_actor},
+    runtime::{ActorHandler, ActorLoopExit, RuntimeGuard, TokioTaskFailure, TokioTaskGroup, run_actor},
     service::RuntimeService,
 };
 
 use caly_backends::HttpSubscriptionBackend;
 
-use super::{CompositionError, WallClock, bounded_task_reason, task_name, task_name_or_abort};
+use super::{CompositionError, WallClock, bounded_task_reason, task_failure, task_name};
 
-/// Initial backoff before the first auto-restart after a crash.
 /// Receivers for the five owner actor handlers.
 pub(super) struct HandlerReceivers {
     pub core_lifecycle:
@@ -101,23 +100,8 @@ where
     Ok(())
 }
 
-/// Spawns the TelemetryActor handler plus the periodic telemetry scheduler that
-/// produces `Sample` and publishes the refreshed observed state to the projection.
-/// Builds the telemetry backend for the configured core.
-///
-/// The active core selects the matching kernel control (Mihomo or sing-box) and
-/// controller address, sharing the daemon's controller auth secret so sampling
-/// is authenticated. When the control cannot be constructed (unsupported core
-/// or bad address), a control-less backend is returned that keeps the observed
-/// cell authoritative without failing startup.
-/// Truncates a controller secret to at most `MAX_LEN` UTF-8 bytes and wraps
-/// it in the bounded type. Delegates to `BoundedText::from_nonempty_clamped`,
-/// which already implements byte-boundary clamping (the previous
-/// `chars().take(MAX_LEN)` truncation inlined here was unit-count, would
-/// overflow the byte limit on a non-ASCII secret, and fell back to
-/// `unwrap_or_else` into `std::process::abort` in production code). The
-/// fallback `"_"` keeps the `BoundedText` non-empty for the empty-secret
-/// case without aborting.
+/// Clamps a controller secret to at most `MAX_LEN` UTF-8 bytes, keeping the
+/// bounded text non-empty with a `"_"` fallback.
 fn clamp_secret<const MAX_LEN: usize>(value: String) -> caly_domain::BoundedText<MAX_LEN> {
     caly_domain::BoundedText::from_nonempty_clamped(value, "_")
 }
@@ -411,13 +395,15 @@ fn actor_result_step(
                             ?error,
                             "projection recovered from snapshot; daemon continues"
                         );
-                        Ok(false)
-                    } else {
-                        if let Ok(mut guard) = runtime_guard.lock() {
-                            guard.record_actor_result_error(&error);
-                        }
-                        Err(dispatcher_failure("actor result application failed"))
+                        return Ok(false);
                     }
+                    record_fatal(runtime_guard, |guard| {
+                        guard.record_actor_result_error(&error);
+                    });
+                    Err(task_failure(
+                        "command-dispatcher",
+                        "actor result application failed",
+                    ))
                 }
                 // A rejected admission is a business-level condition (the
                 // operation itself carries a failure envelope); it must not
@@ -427,10 +413,13 @@ fn actor_result_step(
                     Ok(false)
                 }
                 ActorResultError::InvalidTimeout => {
-                    if let Ok(mut guard) = runtime_guard.lock() {
+                    record_fatal(runtime_guard, |guard| {
                         guard.record_actor_result_error(&error);
-                    }
-                    Err(dispatcher_failure("actor result application failed"))
+                    });
+                    Err(task_failure(
+                        "command-dispatcher",
+                        "actor result application failed",
+                    ))
                 }
             }
         }
@@ -454,18 +443,17 @@ fn dispatch_step(
         })
         .dispatch_once(receiver, fanout, Duration::from_millis(100));
     if let Err(error) = result {
-        if let Ok(mut guard) = runtime_guard.lock() {
-            guard.record_dispatch_error(&error);
-        }
-        return Err(dispatcher_failure("command dispatch failed"));
+        record_fatal(runtime_guard, |guard| guard.record_dispatch_error(&error));
+        return Err(task_failure("command-dispatcher", "command dispatch failed"));
     }
     Ok(())
 }
 
-fn dispatcher_failure(reason: &'static str) -> TokioTaskFailure {
-    TokioTaskFailure::Task {
-        name: task_name_or_abort("command-dispatcher"),
-        reason: bounded_task_reason(reason),
+/// Records a dispatcher-owned fatal on the shared runtime guard, logging the
+/// lock-poison case loudly instead of silently skipping the record.
+fn record_fatal(runtime_guard: &SharedRuntimeGuard, record: impl FnOnce(&mut RuntimeGuard)) {
+    if let Ok(mut guard) = runtime_guard.lock() {
+        record(&mut guard);
     }
 }
 

@@ -11,7 +11,7 @@ use caly_platform::paths::AppPaths;
 use caly_protocol::{client::UdsClient, protocol::v2::WireCommand};
 
 use super::super::output;
-use super::ops::execute_operation_with;
+use super::ops::execute_operation;
 use crate::client::legacy::SysCmd;
 
 /// The layered override fragment `caly sys tun` writes so the TUN intent
@@ -52,12 +52,12 @@ pub(crate) fn execute_sys_cmd(client: &mut UdsClient, cmd: SysCmd, json: bool) -
             } else {
                 "disable system proxy"
             };
-            execute_operation_with(client, json, summary, |_| WireCommand::SetSystemProxy {
-                enabled,
+            execute_operation(client, json, summary, false, |_| {
+                WireCommand::SetSystemProxy { enabled }
             })
         }
         SysCmd::ProxyPac(url) => {
-            execute_operation_with(client, json, "enable system proxy PAC mode", |_| {
+            execute_operation(client, json, "enable system proxy PAC mode", false, |_| {
                 WireCommand::SetSystemProxyPac { url }
             })
         }
@@ -74,15 +74,16 @@ pub(crate) fn execute_sys_cmd(client: &mut UdsClient, cmd: SysCmd, json: bool) -
                 return code;
             }
             let applied =
-                execute_operation_with(client, json, "apply configuration for TUN", |id| {
+                execute_operation(client, json, "apply configuration for TUN", false, |id| {
                     WireCommand::ApplyConfig { candidate_id: id }
                 });
             if applied != ExitCode::SUCCESS {
                 return applied;
             }
             let summary = if enabled { "engage TUN" } else { "restore TUN" };
-            let outcome =
-                execute_operation_with(client, json, summary, |_| WireCommand::SetTun { enabled });
+            let outcome = execute_operation(client, json, summary, false, |_| {
+                WireCommand::SetTun { enabled }
+            });
             // Rollback transaction: a failed engage must never leave the
             // committed tun-inbound config in effect — the core would keep
             // hijacking traffic into a device the platform layer did not
@@ -93,10 +94,11 @@ pub(crate) fn execute_sys_cmd(client: &mut UdsClient, cmd: SysCmd, json: bool) -
             // device and tearing down auto-route rules.
             if enabled && outcome != ExitCode::SUCCESS {
                 let _ = patch_tun_enabled(false, json);
-                let reverted = execute_operation_with(
+                let reverted = execute_operation(
                     client,
                     json,
                     "revert TUN configuration after failed engage",
+                    false,
                     |id| WireCommand::ApplyConfig { candidate_id: id },
                 );
                 let message = if reverted == ExitCode::SUCCESS {

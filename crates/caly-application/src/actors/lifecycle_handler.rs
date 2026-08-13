@@ -10,8 +10,8 @@ use crate::{
 };
 
 use super::{
+    reporting::{finish_report, HandlerReportError},
     ActorFailure, ActorFailureKind, CoreLifecycleCommandBackend,
-    reporting::{HandlerReportError, report_outcome},
 };
 
 /// Concrete process lifecycle operations supplied by the kernel backend.
@@ -69,17 +69,11 @@ impl<B: CoreLifecycleCommandBackend> ActorHandler<RoutedCommand>
                 ))
             }
             Command::StopDaemon => {
-                // Round 17: `daemon stop` is a runtime-level
-                // event. The handler reports the current
-                // applied state (no mutation), then the
-                // daemon runtime observes the completed
-                // operation and breaks its `serve()` loop
-                // (see `daemon.rs`). The `AppliedState` is
-                // fetched from the lifecycle backend's
-                // view (the same state `Stop` would
-                // produce), so the client's `status` call
-                // after `Stop` reflects the post-shutdown
-                // intent.
+                // Round 17: `daemon stop` reports the current applied state
+                // (no mutation); the daemon runtime observes the completed
+                // operation and breaks its `serve()` loop. The state is
+                // fetched from the lifecycle backend so the client's
+                // `status` after `Stop` reflects the post-shutdown intent.
                 self.backend.stop()
             }
             Command::SelectProxy { .. }
@@ -93,19 +87,14 @@ impl<B: CoreLifecycleCommandBackend> ActorHandler<RoutedCommand>
             }
         };
         let outcome = result.map(|state| vec![PresentationDelta::AppliedReplaced(state)]);
-        report_outcome(&self.results, operation_id, outcome)
-            .map_err(CoreLifecycleHandlerError::Report)?;
-        Ok(ActorDirective::Continue)
+        finish_report(&self.results, operation_id, outcome)
+            .map_err(CoreLifecycleHandlerError::Report)
     }
 }
 
 fn unsupported_failure(message: &'static str, action: &'static str) -> ActorFailure {
-    // The inputs here are module-level `&'static str` literals that always
-    // fit the bounded message size, but we still use the infallible `clamped`
-    // constructor to keep the call site abort-free: the previous
-    // `unwrap_or_else(|_| std::process::abort())` form would have aborted the
-    // daemon if a future refactor passes a dynamic string that happens to
-    // exceed 512 bytes (e.g. an interpolated OS error).
+    // Static literals, well under the bounded size; the infallible `clamped`
+    // constructor keeps the call site abort-free.
     ActorFailure::clamped(ActorFailureKind::Unsupported, message, action)
 }
 
@@ -115,7 +104,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        actor_result::{ActorReport, ActorResultClient, actor_result_mailbox},
+        actor_result::{actor_result_mailbox, ActorReport, ActorResultClient},
         command_bus::CommandEnvelope,
         routing::CommandTarget,
     };

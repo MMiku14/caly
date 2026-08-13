@@ -378,9 +378,6 @@ fn parse_traffic_json(text: &str) -> Result<serde_json::Value, KernelFailure> {
 
 /// Parses a `/traffic` data frame into per-second (download, upload) rates.
 ///
-/// `/traffic` differs between kernels: Mihomo emits `{"up":N,"down":N,
-/// "upTotal":N,"downTotal":N}` where `up`/`down` are the *per-second*
-/// Parses a `/traffic` data frame into per-second (download, upload) rates.
 /// Per-second fields win over the cumulative totals so telemetry records a
 /// rate, not an ever-growing counter. Test helper — the production path
 /// distinguishes Mihomo totals from sing-box delta frames directly.
@@ -455,52 +452,13 @@ fn parse_connection_json(connection: &serde_json::Value) -> ConnectionDetail {
             .to_owned(),
         host,
         destination_port,
-        network: metadata
-            .and_then(|m| m.get("network"))
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or_default()
-            .to_owned(),
-        protocol_type: metadata
-            .and_then(|m| m.get("type"))
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or_default()
-            .to_owned(),
-        inbound_name: metadata
-            .and_then(|m| m.get("inboundName"))
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or_default()
-            .to_owned(),
-        process_path: metadata
-            .and_then(|m| m.get("processPath"))
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or_default()
-            .to_owned(),
-        rule: metadata
-            .and_then(|m| m.get("rule"))
-            .and_then(serde_json::Value::as_str)
-            .or_else(|| connection.get("rule").and_then(serde_json::Value::as_str))
-            .unwrap_or_default()
-            .to_owned(),
-        rule_payload: metadata
-            .and_then(|m| m.get("rulePayload"))
-            .and_then(serde_json::Value::as_str)
-            .or_else(|| {
-                connection
-                    .get("rulePayload")
-                    .and_then(serde_json::Value::as_str)
-            })
-            .unwrap_or_default()
-            .to_owned(),
-        outbound: metadata
-            .and_then(|m| m.get("outbound"))
-            .and_then(serde_json::Value::as_str)
-            .or_else(|| {
-                connection
-                    .get("outbound")
-                    .and_then(serde_json::Value::as_str)
-            })
-            .unwrap_or_default()
-            .to_owned(),
+        network: meta_string(metadata, "network"),
+        protocol_type: meta_string(metadata, "type"),
+        inbound_name: meta_string(metadata, "inboundName"),
+        process_path: meta_string(metadata, "processPath"),
+        rule: meta_or_top_string(metadata, connection, "rule", "rule"),
+        rule_payload: meta_or_top_string(metadata, connection, "rulePayload", "rulePayload"),
+        outbound: meta_or_top_string(metadata, connection, "outbound", "outbound"),
         chain: metadata
             .and_then(|m| m.get("chain"))
             .and_then(serde_json::Value::as_array)
@@ -520,6 +478,32 @@ fn parse_connection_json(connection: &serde_json::Value) -> ConnectionDetail {
         upload_bytes: numeric(connection, "upload"),
         download_bytes: numeric(connection, "download"),
     }
+}
+
+/// Reads a string field from a connection's `metadata` (missing/invalid
+/// degrades to empty).
+fn meta_string(metadata: Option<&serde_json::Value>, key: &str) -> String {
+    metadata
+        .and_then(|m| m.get(key))
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .to_owned()
+}
+
+/// Reads a string field from `metadata`, falling back to the connection's
+/// top level (sing-box can put rule/outbound at the top level).
+fn meta_or_top_string(
+    metadata: Option<&serde_json::Value>,
+    connection: &serde_json::Value,
+    key: &str,
+    top_key: &str,
+) -> String {
+    metadata
+        .and_then(|m| m.get(key))
+        .and_then(serde_json::Value::as_str)
+        .or_else(|| connection.get(top_key).and_then(serde_json::Value::as_str))
+        .unwrap_or_default()
+        .to_owned()
 }
 
 /// Reads a traffic byte count from the first matching field name.

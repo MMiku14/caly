@@ -23,19 +23,7 @@ pub(crate) fn run<R: CommandRunner>(
         arguments: arguments(values)?,
         timeout: TIMEOUT,
     };
-    let result = runner.run_bounded(request).map_err(|_| {
-        crate::failure(
-            "system proxy command failed",
-            "install the desktop backend or use a supported desktop",
-        )
-    })?;
-    if result.exit_code != Some(0) {
-        return Err(crate::failure(
-            "system proxy command returned failure",
-            "inspect desktop proxy permissions",
-        ));
-    }
-    Ok(result)
+    super::run_ok(runner, request)
 }
 
 /// Enables or disables the GNOME proxy; enabling points at `host:port`.

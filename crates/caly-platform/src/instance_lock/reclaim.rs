@@ -81,7 +81,7 @@ pub(crate) fn owner_token(owner: LockOwner) -> String {
     token
 }
 
-fn failure(
+pub(crate) fn failure(
     operation: &'static str,
     path: &Path,
     message: String,

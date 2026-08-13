@@ -158,14 +158,7 @@ fn list(log: &OperationLog, options: &CliOptions, limit: Option<usize>) -> ExitC
     let shown = limit.unwrap_or(20).min(entries.len());
     let slice = &entries[entries.len() - shown..];
     if options.json {
-        println!(
-            "{}",
-            serde_json::json!({
-                "ok": true,
-                "version": crate::output::JSON_CONTRACT_VERSION,
-                "entries": slice,
-            })
-        );
+        crate::output::print_ok_envelope(serde_json::json!({ "entries": slice }));
         return ExitCode::SUCCESS;
     }
     if slice.is_empty() {
@@ -234,28 +227,14 @@ fn replay(log: &OperationLog, options: &CliOptions, target: &str) -> ExitCode {
             );
             crate::run(invocation.command, invocation.options)
         }
-        Err(error) => {
-            let code = error.exit_code();
-            let _ = error.print();
-            match u8::try_from(code) {
-                Ok(code) => ExitCode::from(code),
-                Err(_) => ExitCode::FAILURE,
-            }
-        }
+        Err(error) => crate::error::print_and_fold(&error),
     }
 }
 
 fn clear(log: &OperationLog, options: &CliOptions) -> ExitCode {
     log.clear();
     if options.json {
-        println!(
-            "{}",
-            serde_json::json!({
-                "ok": true,
-                "version": crate::output::JSON_CONTRACT_VERSION,
-                "cleared": true,
-            })
-        );
+        crate::output::print_ok_envelope(serde_json::json!({ "cleared": true }));
     } else {
         println!("ok: operations cleared");
     }

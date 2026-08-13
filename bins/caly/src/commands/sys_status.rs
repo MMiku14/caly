@@ -43,24 +43,19 @@ pub fn run_sysproxy(options: &crate::cli::CliOptions) -> ExitCode {
     let recorded = record.is_file();
     let diagnosis = diagnose(declared, &actual, recorded, &expected_endpoint);
     if options.json {
-        println!(
-            "{}",
-            serde_json::json!({
-                "ok": true,
-                "version": crate::output::JSON_CONTRACT_VERSION,
-                "declared": {
-                    "enabled": declared.enabled,
-                    "host": declared.host,
-                    "port": declared.port,
-                },
-                "actual": {
-                    "mode": actual.0,
-                    "endpoint": actual.1,
-                },
-                "diagnosis": diagnosis,
-                "recovery_record": recorded,
-            })
-        );
+        crate::output::print_ok_envelope(serde_json::json!({
+            "declared": {
+                "enabled": declared.enabled,
+                "host": declared.host,
+                "port": declared.port,
+            },
+            "actual": {
+                "mode": actual.0,
+                "endpoint": actual.1,
+            },
+            "diagnosis": diagnosis,
+            "recovery_record": recorded,
+        }));
         return ExitCode::SUCCESS;
     }
     let mut rows = vec![
@@ -182,22 +177,17 @@ pub fn run_tun(options: &crate::cli::CliOptions) -> ExitCode {
     // composition store open and this offline projection can never drift.
     let record = paths.tun_recovery_record_path();
     if options.json {
-        println!(
-            "{}",
-            serde_json::json!({
-                "ok": true,
-                "version": crate::output::JSON_CONTRACT_VERSION,
-                "declared": {
-                    "enabled": declared.enabled,
-                    "mtu": declared.mtu,
-                    "stack": format!("{:?}", declared.stack).to_lowercase(),
-                    "auto_route": declared.auto_route,
-                    "strict_route": declared.strict_route,
-                    "escalation": declared.escalation,
-                },
-                "recovery_record": record.is_file(),
-            })
-        );
+        crate::output::print_ok_envelope(serde_json::json!({
+            "declared": {
+                "enabled": declared.enabled,
+                "mtu": declared.mtu,
+                "stack": format!("{:?}", declared.stack).to_lowercase(),
+                "auto_route": declared.auto_route,
+                "strict_route": declared.strict_route,
+                "escalation": declared.escalation,
+            },
+            "recovery_record": record.is_file(),
+        }));
         return ExitCode::SUCCESS;
     }
     print_key_values(&[
@@ -320,24 +310,20 @@ mod tests {
 
     #[test]
     fn diagnose_declared_enabled_but_not_engaged() {
-        assert!(
-            diagnose(
-                &declared(true),
-                &actual("none", ""),
-                false,
-                "127.0.0.1:7890"
-            )
-            .is_some()
-        );
-        assert!(
-            diagnose(
-                &declared(true),
-                &actual("auto", "file:///x"),
-                true,
-                "127.0.0.1:7890"
-            )
-            .is_some()
-        );
+        assert!(diagnose(
+            &declared(true),
+            &actual("none", ""),
+            false,
+            "127.0.0.1:7890"
+        )
+        .is_some());
+        assert!(diagnose(
+            &declared(true),
+            &actual("auto", "file:///x"),
+            true,
+            "127.0.0.1:7890"
+        )
+        .is_some());
         // Manual but no recovery record — likely engaged outside caly.
         let d = diagnose(
             &declared(true),
@@ -360,24 +346,20 @@ mod tests {
 
     #[test]
     fn diagnose_declared_disabled_but_desktop_engaged() {
-        assert!(
-            diagnose(
-                &declared(false),
-                &actual("manual", "10.0.0.1:3128"),
-                false,
-                "127.0.0.1:7890"
-            )
-            .is_some()
-        );
-        assert!(
-            diagnose(
-                &declared(false),
-                &actual("auto", "file:///x"),
-                true,
-                "127.0.0.1:7890"
-            )
-            .is_some()
-        );
+        assert!(diagnose(
+            &declared(false),
+            &actual("manual", "10.0.0.1:3128"),
+            false,
+            "127.0.0.1:7890"
+        )
+        .is_some());
+        assert!(diagnose(
+            &declared(false),
+            &actual("auto", "file:///x"),
+            true,
+            "127.0.0.1:7890"
+        )
+        .is_some());
     }
 
     #[test]

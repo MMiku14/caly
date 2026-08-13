@@ -8,7 +8,7 @@ use std::{
 };
 
 use caly_application::service::ApplicationServicePort;
-use tokio::net::UnixListener;
+use tokio::net::{UnixListener, UnixStream};
 
 use crate::json::JsonService;
 
@@ -106,17 +106,6 @@ pub fn bind_owner_only(path: &Path) -> io::Result<UnixListener> {
     Ok(listener)
 }
 
-/// Serves the JSON-framed service over an owner-only UDS.
-pub async fn serve_owner_only<A>(
-    path: PathBuf,
-    service: JsonService<A>,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
-where
-    A: ApplicationServicePort + Send + 'static,
-{
-    serve_owner_only_until_signal(path, service).await
-}
-
 pub(crate) async fn shutdown_signal() {
     #[cfg(unix)]
     {
@@ -134,6 +123,73 @@ pub(crate) async fn shutdown_signal() {
     #[cfg(not(unix))]
     {
         let _ = tokio::signal::ctrl_c().await;
+    }
+}
+
+/// Shared accept surface over the two tokio listeners (TCP and UDS); the
+/// address type differs per transport and is discarded by the accept loop.
+pub(crate) trait TransportListener {
+    type Stream: Send + 'static;
+    type Address;
+    fn accept(&self) -> impl Future<Output = std::io::Result<(Self::Stream, Self::Address)>>;
+}
+
+impl TransportListener for tokio::net::TcpListener {
+    type Stream = tokio::net::TcpStream;
+    type Address = std::net::SocketAddr;
+    fn accept(&self) -> impl Future<Output = std::io::Result<(Self::Stream, Self::Address)>> {
+        tokio::net::TcpListener::accept(self)
+    }
+}
+
+impl TransportListener for tokio::net::UnixListener {
+    type Stream = tokio::net::UnixStream;
+    type Address = tokio::net::unix::SocketAddr;
+    fn accept(&self) -> impl Future<Output = std::io::Result<(Self::Stream, Self::Address)>> {
+        tokio::net::UnixListener::accept(self)
+    }
+}
+
+/// Runs one accept loop until shutdown, handing each accepted stream to
+/// `on_accept`, which owns the per-connection task spawn.
+///
+/// Audit #92: a transient accept error (fd pressure: EMFILE/ENFILE, a reset
+/// racing the accept, …) used to tear down the whole transport with `?`;
+/// the loop logs and keeps serving after a short backoff instead.
+pub(crate) async fn serve_accept_loop<L, A, F>(
+    listener: &L,
+    service: JsonService<A>,
+    application_shutdown: F,
+    accept_label: &'static str,
+    mut on_accept: impl FnMut(L::Stream, JsonService<A>),
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+where
+    L: TransportListener,
+    A: ApplicationServicePort + Send + 'static,
+    F: Future<Output = ()> + Send + 'static,
+{
+    let shutdown = async move {
+        tokio::select! {
+            () = shutdown_signal() => {},
+            () = application_shutdown => {},
+        }
+    };
+    tokio::pin!(shutdown);
+    loop {
+        tokio::select! {
+            () = &mut shutdown => return Ok(()),
+            accepted = listener.accept() => {
+                let (stream, _) = match accepted {
+                    Ok(pair) => pair,
+                    Err(error) => {
+                        tracing::warn!(%error, "{accept_label} accept failed; backing off briefly");
+                        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                        continue;
+                    }
+                };
+                on_accept(stream, service.clone());
+            }
+        }
     }
 }
 
@@ -162,49 +218,34 @@ where
     F: Future<Output = ()> + Send + 'static,
 {
     let listener = bind_owner_only(&path)?;
-    let shutdown = async move {
-        tokio::select! {
-            () = shutdown_signal() => {},
-            () = application_shutdown => {},
-        }
-    };
-    tokio::pin!(shutdown);
-    loop {
-        tokio::select! {
-            () = &mut shutdown => return Ok(()),
-            accepted = listener.accept() => {
-                let (stream, _) = match accepted {
-                    Ok(pair) => pair,
-                    Err(error) => {
-                        // Audit #92 (UDS twin of the TCP fix): a transient
-                        // accept error used to tear down the loopback
-                        // transport; log and keep serving after a backoff.
-                        tracing::warn!(%error, "UDS accept failed; backing off briefly");
-                        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                        continue;
-                    }
-                };
-                // #27: the 0600 socket permissions gate path
-                // traversal, but they do NOT defend against a
-                // same-UID container / flatpak-style mount of a
-                // runtime dir with an oversized umask, nor
-                // against a process that inherited the fd
-                // through a unix rights-passing channel and was
-                // then re-exec'd as another user. SO_PEERCRED
-                // pins the peer's effective uid to the socket
-                // file's owner (the daemon itself) before a
-                // single frame is read; anything else is dropped
-                // without an answer.
-                if !peer_is_socket_owner(&stream, &path) {
-                    continue;
-                }
-                let service = service.clone();
-                tokio::spawn(async move {
-                    service.handle_connection(stream).await;
-                });
+    let on_accept = move |stream: UnixStream, service: JsonService<A>| {
+        let path = path.clone();
+        tokio::spawn(async move {
+            // #27: the 0600 socket permissions gate path
+            // traversal, but they do NOT defend against a
+            // same-UID container / flatpak-style mount of a
+            // runtime dir with an oversized umask, nor
+            // against a process that inherited the fd
+            // through a unix rights-passing channel and was
+            // then re-exec'd as another user. SO_PEERCRED
+            // pins the peer's effective uid to the socket
+            // file's owner (the daemon itself) before a
+            // single frame is read; anything else is dropped
+            // without an answer.
+            if !peer_is_socket_owner(&stream, &path) {
+                return;
             }
-        }
-    }
+            service.handle_connection(stream).await;
+        });
+    };
+    serve_accept_loop(
+        &listener,
+        service,
+        application_shutdown,
+        "UDS",
+        on_accept,
+    )
+    .await
 }
 
 /// Whether the accepted peer's effective uid matches the owner

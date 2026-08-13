@@ -85,10 +85,10 @@ fn subscription_groups_render_as_selector_outbounds() -> Result<(), String> {
     let backend = SingBoxConfigBackend::new(PathBuf::from("/tmp/sing-box.json"))
         .with_registry(registry_with_singbox())
         .with_routing(routing)
-        .with_rules(vec![
-            caly_domain::RoutingRule::from_clash_line("DOMAIN,internal.lan,DIRECT")
-                .map_err(|e| format!("schema rule should parse: {e:?}"))?,
-        ]);
+        .with_rules(vec![caly_domain::RoutingRule::from_clash_line(
+            "DOMAIN,internal.lan,DIRECT",
+        )
+        .map_err(|e| format!("schema rule should parse: {e:?}"))?]);
     let bytes = backend.build_document().map_err(|e| format!("{e:?}"))?;
     let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
     let outbounds = value["outbounds"].as_array().ok_or("no outbounds")?;

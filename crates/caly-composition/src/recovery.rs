@@ -14,7 +14,7 @@ use caly_application::{
 };
 use caly_backends::dual::DualCoreLifecycle;
 
-use super::{CompositionError, bounded_task_reason, task_name, task_name_or_abort};
+use super::{CompositionError, task_failure, task_name};
 
 /// Initial backoff before the first auto-restart after a crash.
 const CRASH_RESTART_BACKOFF_START_MS: u64 = 1_000;
@@ -187,10 +187,7 @@ fn poll_crash(
 ) -> Result<Option<caly_domain::AppliedState>, TokioTaskFailure> {
     lifecycle
         .poll_abnormal_exit()
-        .map_err(|_| TokioTaskFailure::Task {
-            name: task_name_or_abort("core-exit-monitor"),
-            reason: bounded_task_reason("core abnormal-exit polling failed"),
-        })
+        .map_err(|_| task_failure("core-exit-monitor", "core abnormal-exit polling failed"))
 }
 
 /// Attempts to restart the core; returns the running state on success.
@@ -236,16 +233,10 @@ fn report_stable(
         ResultDeltas::try_from_vec(vec![caly_domain::PresentationDelta::ObservedReplaced(
             observed,
         )])
-        .map_err(|_| TokioTaskFailure::Task {
-            name: task_name_or_abort("core-exit-monitor"),
-            reason: bounded_task_reason("core stable delta overflow"),
-        })?;
+        .map_err(|_| task_failure("core-exit-monitor", "core stable delta overflow"))?;
     results
         .try_report(caly_application::actor_result::ActorReport::Recovered { deltas })
-        .map_err(|_| TokioTaskFailure::Task {
-            name: task_name_or_abort("core-exit-monitor"),
-            reason: bounded_task_reason("core stable result mailbox failed"),
-        })
+        .map_err(|_| task_failure("core-exit-monitor", "core stable result mailbox failed"))
 }
 
 /// Builds `AppliedReplaced` + `ObservedReplaced` deltas and submits them.
@@ -259,16 +250,10 @@ fn report_observation(
         caly_domain::PresentationDelta::ObservedReplaced(observed),
         caly_domain::PresentationDelta::AppliedReplaced(state),
     ])
-    .map_err(|_| TokioTaskFailure::Task {
-        name: task_name_or_abort("core-exit-monitor"),
-        reason: bounded_task_reason("core crash delta overflow"),
-    })?;
+    .map_err(|_| task_failure("core-exit-monitor", "core crash delta overflow"))?;
     results
         .try_report(kind(deltas))
-        .map_err(|_| TokioTaskFailure::Task {
-            name: task_name_or_abort("core-exit-monitor"),
-            reason: bounded_task_reason("core crash result mailbox failed"),
-        })
+        .map_err(|_| task_failure("core-exit-monitor", "core crash result mailbox failed"))
 }
 
 /// Returns `observed` with the self-heal counters updated after a restart.

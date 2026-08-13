@@ -325,32 +325,34 @@ fn inline_payload_rules(provider: &RuleProvider, payload: &str) -> (Vec<Headless
     (rules, skipped)
 }
 
-/// Headless rule constructors (single matcher key each).
-fn headless_rule_domain(value: &str) -> HeadlessRule {
+/// Packs a single matcher key/value into a headless rule (all other keys
+/// empty) — a matcher without a payload (`domain:`, `domain_suffix:` …).
+/// The rule-set payload rendering needs these shapes because inline
+/// payloads cannot express headless rules directly.
+fn headless_rule(
+    domain: Option<Vec<String>>,
+    domain_keyword: Option<Vec<String>>,
+    domain_suffix: Option<Vec<String>>,
+    ip_cidr: Option<Vec<String>>,
+) -> HeadlessRule {
     HeadlessRule {
-        domain: Some(vec![value.to_owned()]),
-        domain_keyword: None,
-        domain_suffix: None,
-        ip_cidr: None,
+        domain,
+        domain_keyword,
+        domain_suffix,
+        ip_cidr,
     }
+}
+
+fn headless_rule_domain(value: &str) -> HeadlessRule {
+    headless_rule(Some(vec![value.to_owned()]), None, None, None)
 }
 
 fn headless_rule_domain_suffix(value: &str) -> HeadlessRule {
-    HeadlessRule {
-        domain: None,
-        domain_keyword: None,
-        domain_suffix: Some(vec![value.to_owned()]),
-        ip_cidr: None,
-    }
+    headless_rule(None, None, Some(vec![value.to_owned()]), None)
 }
 
 fn headless_rule_ip_cidr(value: &str) -> HeadlessRule {
-    HeadlessRule {
-        domain: None,
-        domain_keyword: None,
-        domain_suffix: None,
-        ip_cidr: Some(vec![value.to_owned()]),
-    }
+    headless_rule(None, None, None, Some(vec![value.to_owned()]))
 }
 
 /// Projects a parsed classical matcher onto the headless-rule kinds
@@ -361,12 +363,12 @@ fn headless_from_matcher(matcher: &RuleMatch) -> Option<HeadlessRule> {
     match matcher {
         RuleMatch::Domain(text) => Some(headless_rule_domain(text.as_str())),
         RuleMatch::DomainSuffix(text) => Some(headless_rule_domain_suffix(text.as_str())),
-        RuleMatch::DomainKeyword(text) => Some(HeadlessRule {
-            domain: None,
-            domain_keyword: Some(vec![text.as_str().to_owned()]),
-            domain_suffix: None,
-            ip_cidr: None,
-        }),
+        RuleMatch::DomainKeyword(text) => Some(headless_rule(
+            None,
+            Some(vec![text.as_str().to_owned()]),
+            None,
+            None,
+        )),
         RuleMatch::IpCidr(text) => Some(headless_rule_ip_cidr(text.as_str())),
         RuleMatch::Geoip(_)
         | RuleMatch::Geosite(_)

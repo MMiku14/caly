@@ -17,19 +17,21 @@ pub struct ShutdownFailure {
     pub message: BoundedText<512>,
 }
 
-/// Resource owners implement each mandatory shutdown action.
+/// Resource owners implement each mandatory shutdown action. Phases a
+/// composition does not bind may use the no-op defaults, which complete
+/// immediately without touching resources.
 #[async_trait]
 pub trait ShutdownActions {
-    async fn reject_transport_mutations(&mut self) -> Result<(), BoundedText<512>>;
-    async fn close_command_ingress(&mut self) -> Result<(), BoundedText<512>>;
+    async fn reject_transport_mutations(&mut self) -> Result<(), BoundedText<512>> { Ok(()) }
+    async fn close_command_ingress(&mut self) -> Result<(), BoundedText<512>> { Ok(()) }
     async fn stop_telemetry(&mut self) -> Result<(), BoundedText<512>>;
     async fn stop_and_reap_core(&mut self) -> Result<(), BoundedText<512>>;
     async fn restore_platform(&mut self) -> Result<(), BoundedText<512>>;
-    async fn stop_subscriptions(&mut self) -> Result<(), BoundedText<512>>;
-    async fn finish_config_transactions(&mut self) -> Result<(), BoundedText<512>>;
-    async fn flush_event_sequencer(&mut self) -> Result<(), BoundedText<512>>;
-    async fn stop_projector(&mut self) -> Result<(), BoundedText<512>>;
-    async fn release_transport_and_lock(&mut self) -> Result<(), BoundedText<512>>;
+    async fn stop_subscriptions(&mut self) -> Result<(), BoundedText<512>> { Ok(()) }
+    async fn finish_config_transactions(&mut self) -> Result<(), BoundedText<512>> { Ok(()) }
+    async fn flush_event_sequencer(&mut self) -> Result<(), BoundedText<512>> { Ok(()) }
+    async fn stop_projector(&mut self) -> Result<(), BoundedText<512>> { Ok(()) }
+    async fn release_transport_and_lock(&mut self) -> Result<(), BoundedText<512>> { Ok(()) }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -40,13 +42,13 @@ pub enum ShutdownRunError {
 
 /// Attempts every phase in order, retaining all bounded failures.
 pub async fn run_shutdown(
-    actions: &mut impl ShutdownActions,
+    actions: &mut (impl ShutdownActions + Send),
 ) -> Result<ShutdownFailures, ShutdownRunError> {
     run_shutdown_with_timeout(actions, SHUTDOWN_PHASE_TIMEOUT).await
 }
 
 async fn run_shutdown_with_timeout(
-    actions: &mut impl ShutdownActions,
+    actions: &mut (impl ShutdownActions + Send),
     timeout: std::time::Duration,
 ) -> Result<ShutdownFailures, ShutdownRunError> {
     let mut driver = ShutdownDriver::new();
@@ -66,7 +68,7 @@ async fn run_shutdown_with_timeout(
 }
 
 async fn execute_phase(
-    actions: &mut impl ShutdownActions,
+    actions: &mut (impl ShutdownActions + Send),
     phase: ShutdownPhase,
     timeout: std::time::Duration,
 ) -> Result<(), BoundedText<512>> {
@@ -91,13 +93,10 @@ async fn execute_phase(
 }
 
 fn timeout_failure(phase: ShutdownPhase, timeout: std::time::Duration) -> BoundedText<512> {
-    // The `format!` output is a short status line whose byte length is well
-    // under the 512-byte bound, so the bounded constructor cannot fail for
-    // the well-formed call sites. The previous `unwrap_or_else(|_| abort)`
-    // form was a process-kill fallback for an unreachable path; the
-    // infallible `from_nonempty_clamped` keeps the same behaviour for the
-    // well-formed call sites and surfaces a stable `"_"` fallback for any
-    // future refactor that accidentally widens the input.
+    // The formatted status line is far under the 512-byte bound, so the
+    // infallible constructor degrades to a stable "_" fallback instead of
+    // the old process-kill `unwrap_or_else(|_| abort)` if a future refactor
+    // widens the input.
     caly_domain::BoundedText::from_nonempty_clamped(
         format!("shutdown phase {phase:?} exceeded {timeout:?}"),
         "shutdown phase exceeded",

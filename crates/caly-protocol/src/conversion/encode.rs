@@ -41,7 +41,7 @@ pub fn snapshot_to_wire(
 
 /// W3b: the kernel proxy-group slice, mapped 1:1 onto the wire shape.
 /// Over-long slices clamp at the wire bound (same discipline as nodes).
-fn proxy_groups_to_wire(
+pub fn proxy_groups_to_wire(
     groups: &[caly_domain::ProxyGroupView],
 ) -> BoundedVec<WireProxyGroup, MAX_WIRE_PROXY_GROUPS> {
     let mut wire = BoundedVec::new();

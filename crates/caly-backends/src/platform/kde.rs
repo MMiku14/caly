@@ -126,7 +126,7 @@ fn reload_kio<R: CommandRunner>(runner: &mut R) -> Result<(), ActorFailure> {
         ]])?,
         timeout: std::time::Duration::from_secs(2),
     };
-    run_ok(runner, reload)
+    super::run_ok(runner, reload).map(|_| ())
 }
 
 /// Reads one `kioslaverc` key; missing keys and failures yield `None`.
@@ -136,12 +136,8 @@ fn read_key<R: CommandRunner>(runner: &mut R, tool: &std::path::Path, key: &str)
         arguments: crate::platform::argv(&[PROXY_GROUP, &["--key", key]]).ok()?,
         timeout: std::time::Duration::from_secs(2),
     };
-    let result = runner.run_bounded(request).ok()?;
-    if result.exit_code != Some(0) {
-        return None;
-    }
     Some(
-        std::str::from_utf8(result.stdout.as_slice())
+        std::str::from_utf8(super::run_ok(runner, request).ok()?.stdout.as_slice())
             .unwrap_or_default()
             .trim()
             .to_owned(),
@@ -170,23 +166,7 @@ fn write_key<R: CommandRunner>(
         arguments: crate::platform::argv(&[group, &["--key", key, value]])?,
         timeout: std::time::Duration::from_secs(2),
     };
-    run_ok(runner, request)
-}
-
-fn run_ok<R: CommandRunner>(runner: &mut R, request: CommandRequest) -> Result<(), ActorFailure> {
-    let result = runner.run_bounded(request).map_err(|_| {
-        crate::failure(
-            "system proxy command failed",
-            "install the desktop backend or use a supported desktop",
-        )
-    })?;
-    if result.exit_code != Some(0) {
-        return Err(crate::failure(
-            "system proxy command returned failure",
-            "inspect desktop proxy permissions",
-        ));
-    }
-    Ok(())
+    super::run_ok(runner, request).map(|_| ())
 }
 
 #[cfg(test)]
@@ -259,11 +239,8 @@ mod tests {
             true,
         )?;
         let joined = runner.commands.join("\n");
-        assert!(
-            joined.contains(
-                "kwriteconfig5 --file kioslaverc --group Proxy Settings --key ProxyType 1"
-            )
-        );
+        assert!(joined
+            .contains("kwriteconfig5 --file kioslaverc --group Proxy Settings --key ProxyType 1"));
         assert!(joined.contains("--key httpProxy http://127.0.0.1:7890"));
         assert!(joined.contains("dbus-send --type=signal /KIO/Scheduler org.kde.KIO.Scheduler.reparseSlaveConfiguration string:"));
         Ok(())

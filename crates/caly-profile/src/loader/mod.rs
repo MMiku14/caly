@@ -68,13 +68,6 @@ impl LoaderBudget {
         self.bytes = total;
         Ok(())
     }
-
-    pub const fn check_depth(&self, depth: usize) -> Result<(), LoaderBudgetError> {
-        if depth > self.limits.max_merge_depth {
-            return Err(LoaderBudgetError::MergeTooDeep);
-        }
-        Ok(())
-    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -1,11 +1,7 @@
-//! ConfigActor command handler for `ApplyConfig`.
-
-//!
-//! Wraps a `ConfigActorPort` adapter and drives it through the command-bus
-//! `RoutedCommand` path: parse+render a candidate, commit it, restart the
-//! active core against the new generation, and publish an `AppliedReplaced`
-//! carrying the new config generation. On any failure it reports a terminal
-//! failure without terminating the actor.
+//! ConfigActor command handler for `ApplyConfig`: parse+render a candidate,
+//! commit it, restart the active core against the new generation, and publish
+//! an `AppliedReplaced` carrying the new config generation. On any failure it
+//! reports a terminal failure without terminating the actor.
 
 use caly_domain::{AppliedState, CoreKind, CoreRunState, PresentationDelta};
 
@@ -22,8 +18,8 @@ use crate::{
 use caly_ports::CoreLifecycleCommandBackend;
 
 use super::{
+    reporting::{finish_report, HandlerReportError},
     ConfigActorPort, ConfigCandidate, PreparedConfig,
-    reporting::{HandlerReportError, report_outcome},
 };
 
 /// Owns the config-apply flow over a `ConfigActorPort` backend plus the shared
@@ -78,33 +74,31 @@ impl<B: ConfigActorPort, L: CoreLifecycleCommandBackend> ActorHandler<RoutedComm
             Command::ReloadConfig => return self.reload_config(operation_id),
             _ => return Err(ConfigCommandHandlerError::WrongCommand),
         };
-        let outcome = self.apply_config(candidate_id);
-        report_outcome(&self.results, operation_id, outcome)
-            .map_err(ConfigCommandHandlerError::Report)?;
-        Ok(ActorDirective::Continue)
+        self.apply_and_report(candidate_id, operation_id)
     }
 }
 
 impl<B: ConfigActorPort, L: CoreLifecycleCommandBackend> ConfigCommandHandler<B, L> {
-    /// `ReloadConfig` drives the full re-apply flow (#42):
-    /// re-read the current on-disk layered config (the backend
-    /// re-reads `config.yaml` inside `parse_and_render`), render
-    /// and validate a fresh candidate, commit it, and reload the
-    /// active core — the same transactional path as
-    /// `ApplyConfig`, with the operation id doubled as the
-    /// candidate id so a reload's generation is traceable back
-    /// to its RPC. The earlier two-phase design completed the
-    /// operation with an empty delta and relied on a daemon-side
-    /// second phase that was never implemented, which made
-    /// `caly ... reload` a silent no-op.
+    /// `ReloadConfig` drives the full re-apply flow (#42): re-read the current
+    /// on-disk layered config, render and validate a fresh candidate, commit
+    /// it, and reload the active core — the same transactional path as
+    /// `ApplyConfig`, with the operation id doubled as the candidate id so a
+    /// reload's generation is traceable back to its RPC.
     fn reload_config(
         &mut self,
         operation_id: caly_domain::OperationId,
     ) -> Result<ActorDirective, ConfigCommandHandlerError> {
-        let outcome = self.apply_config(operation_id.into_bytes());
-        report_outcome(&self.results, operation_id, outcome)
-            .map_err(ConfigCommandHandlerError::Report)?;
-        Ok(ActorDirective::Continue)
+        self.apply_and_report(operation_id.into_bytes(), operation_id)
+    }
+
+    fn apply_and_report(
+        &mut self,
+        candidate_id: [u8; 16],
+        operation_id: caly_domain::OperationId,
+    ) -> Result<ActorDirective, ConfigCommandHandlerError> {
+        let outcome = self.apply_config(candidate_id);
+        finish_report(&self.results, operation_id, outcome)
+            .map_err(ConfigCommandHandlerError::Report)
     }
 
     /// Renders, validates and commits a candidate, then reloads the active
@@ -196,7 +190,7 @@ fn failure(message: &str, action: &str) -> super::ActorFailure {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::actor_result::{ActorReport, actor_result_mailbox};
+    use crate::actor_result::{actor_result_mailbox, ActorReport};
     use crate::command_bus::CommandEnvelope;
     use crate::operations::OperationCancellationToken;
     use std::time::Duration;

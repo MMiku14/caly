@@ -14,16 +14,22 @@ use caly_domain::{
 /// Maximum caveat text length mirrored from the domain constant.
 const CAVEAT_MAX: usize = 256;
 
+/// Whether a core's renderer can represent a feature that needs no runtime
+/// endpoint; only the renderer-shaped cores support it.
+fn renderer_supported(core: CoreKind) -> ConfiguredSupport {
+    match core {
+        CoreKind::Mihomo | CoreKind::SingBox => ConfiguredSupport::Supported,
+        CoreKind::Xray => ConfiguredSupport::Unsupported,
+    }
+}
+
 /// Assesses DNS configuration support for a core.
 ///
 /// DNS is rendered into the core's config file, so it needs no separate
 /// runtime endpoint; the assessment therefore carries `NotRequired` runtime
 /// availability once the renderer can represent it.
 pub fn assess_dns(core: CoreKind, dns_enabled: bool) -> CapabilityStatus {
-    let configured = match core {
-        CoreKind::Mihomo | CoreKind::SingBox => ConfiguredSupport::Supported,
-        CoreKind::Xray => ConfiguredSupport::Unsupported,
-    };
+    let configured = renderer_supported(core);
     let caveat = match (configured, dns_enabled) {
         (ConfiguredSupport::Supported, true) => None,
         (ConfiguredSupport::Supported, false) => {
@@ -42,10 +48,7 @@ pub fn assess_dns(core: CoreKind, dns_enabled: bool) -> CapabilityStatus {
 
 /// Assesses TUN render/apply support for a core (both renderers emit a tun block).
 pub fn assess_tun(core: CoreKind) -> CapabilityStatus {
-    let configured = match core {
-        CoreKind::Mihomo | CoreKind::SingBox => ConfiguredSupport::Supported,
-        CoreKind::Xray => ConfiguredSupport::Unsupported,
-    };
+    let configured = renderer_supported(core);
     CapabilityStatus::new(
         Capability::TunConfiguration,
         configured,
@@ -57,10 +60,7 @@ pub fn assess_tun(core: CoreKind) -> CapabilityStatus {
 /// Assesses a capability that the daemon exposes through the core's
 /// Clash-compatible control API (requires a healthy controller at runtime).
 fn assess_control(capability: Capability, core: CoreKind) -> CapabilityStatus {
-    let configured = match core {
-        CoreKind::Mihomo | CoreKind::SingBox => ConfiguredSupport::Supported,
-        CoreKind::Xray => ConfiguredSupport::Unsupported,
-    };
+    let configured = renderer_supported(core);
     CapabilityStatus::new(
         capability,
         configured,
@@ -165,11 +165,10 @@ mod tests {
     fn sing_box_dns_has_disabled_caveat() -> Result<(), DuplicateCapability> {
         let set = core_capability_set(CoreKind::SingBox, false)?;
         assert!(set.is_usable(Capability::DnsConfiguration));
-        assert!(
-            set.get(Capability::DnsConfiguration)
-                .and_then(CapabilityStatus::caveat)
-                .is_some()
-        );
+        assert!(set
+            .get(Capability::DnsConfiguration)
+            .and_then(CapabilityStatus::caveat)
+            .is_some());
         Ok(())
     }
 

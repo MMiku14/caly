@@ -20,10 +20,7 @@ use tokio_stream::{Stream, wrappers::BroadcastStream};
 use super::{ServiceError, ServiceState, lock_state};
 use super::{ServiceV2, event_to_wire};
 
-/// Continuous watch stream: yields the initial replay/snapshot, then follows
-/// live projection events. A slow subscriber that lags the broadcast ring is
-/// sent a fresh full snapshot and re-subscribes, so a slow client only drops
-/// best-effort live events and never blocks the authoritative projector.
+/// Yields the initial replay/snapshot, then follows live projection events.
 pub struct WatchStream<A> {
     pub(super) initial: std::vec::IntoIter<Result<WatchResponse, ServiceError>>,
     pub(super) live: BroadcastStream<SequencedEvent>,

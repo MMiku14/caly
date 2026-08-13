@@ -41,13 +41,10 @@ impl ActorFailure {
     pub fn infrastructure(message: &str, suggested_action: &str) -> Self {
         Self {
             kind: ActorFailureKind::Infrastructure,
-            // `clamp_failure` guarantees the bound, so construction cannot fail.
-            message: FailureMessage::from_nonempty_clamped(
-                clamp_failure(message),
-                "infrastructure failure",
-            ),
+            // `from_nonempty_clamped` guarantees the bound, so construction cannot fail.
+            message: FailureMessage::from_nonempty_clamped(message.to_owned(), "operation failed"),
             suggested_action: FailureMessage::from_nonempty_clamped(
-                clamp_failure(suggested_action),
+                suggested_action.to_owned(),
                 "inspect configuration",
             ),
         }
@@ -73,23 +70,6 @@ impl ActorFailure {
             ),
         }
     }
-}
-
-/// Clamps text to the failure-message byte bound without splitting UTF-8.
-/// Returns a stable fallback for empty input.
-fn clamp_failure(value: &str) -> String {
-    const MAX: usize = 512;
-    if value.is_empty() {
-        return "operation failed".to_owned();
-    }
-    let mut out = String::new();
-    for ch in value.chars() {
-        if out.len() + ch.len_utf8() > MAX {
-            break;
-        }
-        out.push(ch);
-    }
-    out
 }
 
 /// Stable failure category; concrete I/O errors remain in Infrastructure.

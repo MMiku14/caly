@@ -2,7 +2,10 @@
 
 use std::time::Duration;
 
-use caly_domain::{BoundedText, CoreKind, RuntimeAvailability};
+use caly_domain::{
+    BoundedText, BoundedVec, Capability, CapabilitySet, CapabilityStatus, ConfiguredSupport,
+    CoreKind, RuntimeAvailability,
+};
 use caly_platform::process::{OwnedProcessTree, ProcessSpawner};
 
 use crate::contract::{KernelControl, KernelFailure, KernelFailureKind};
@@ -146,6 +149,24 @@ pub(crate) fn ensure_executable(
         }
     }
     Ok(())
+}
+
+/// Builds one capability status for a kernel whose per-capability support is
+/// known at build time (no runtime negotiation happens for these).
+pub(crate) fn capability_status(
+    capability: Capability,
+    support: ConfiguredSupport,
+) -> CapabilityStatus {
+    CapabilityStatus::new(capability, support, RuntimeAvailability::NotRequired, None)
+}
+
+/// Collects statically-known capability statuses into a set. The hardcoded
+/// literal always fits the bounded capacity and contains no duplicate
+/// `Capability` values; the previous `unwrap_or_else(|_| process::abort)`
+/// form was a process-kill fallback for a path that was never reachable,
+/// replaced by the infallible truncate/dedup constructors.
+pub(crate) fn capability_set(statuses: Vec<CapabilityStatus>) -> CapabilitySet {
+    CapabilitySet::from_bounded_dedup(BoundedVec::from_vec_truncated(statuses))
 }
 
 fn bounded<const MAX: usize>(value: &str) -> BoundedText<MAX> {

@@ -13,6 +13,5 @@ pub mod client;
 pub mod conversion;
 pub mod framing;
 pub mod json_serde;
-pub mod local_ipc;
 pub mod protocol;
 pub mod wire_frames;

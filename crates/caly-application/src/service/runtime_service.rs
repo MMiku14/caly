@@ -11,7 +11,7 @@ use crate::{
     command_bus::{CommandEnvelope, CommandReceiveError, CommandReceiver},
     events::SequencedEvent,
     operations::{AdmissionController, AdmissionError, StoreError, TimeSource},
-    routing::{CommandSink, RouteDispatchError, route},
+    routing::{route, CommandSink, RouteDispatchError},
     service::{
         ApplicationServiceError, ApplicationServicePort, ApplicationWatch, CancellationResult,
         CommandSupportPolicy,
@@ -180,16 +180,10 @@ fn dispatch_failure(
     message: &'static str,
     action: &'static str,
 ) -> OperationFailure {
-    // The two inputs are static literals well within the 1 KiB / 512-byte
-    // capacities, so the bounded constructor cannot fail for the well-formed
-    // call sites. The previous `BoundedText::new(...).map_err(...)?` form
-    // was a daemon-fatal path (a `?` early return inside `reject_dispatch`
-    // would leave the operation in a Started-but-not-Failed state until
-    // the next cancel; `dispatch_step` records the error as a fatal and
-    // tears the whole dispatcher down). `OperationFailure::clamped` keeps
-    // the same behaviour for the well-formed call sites and surfaces a
-    // stable `"_"` fallback for any future refactor that accidentally
-    // widens the input.
+    // Static literals, well within the bounded capacities; the infallible
+    // `clamped` constructor replaces the old `BoundedText::new(...)?`
+    // daemon-fatal early return (an unapplied dispatch would leave the
+    // operation Started-not-Failed until the next cancel).
     OperationFailure::clamped(code, message, action)
 }
 

@@ -1,25 +1,18 @@
 //! Inline rule provider materialization.
 //!
-//! `RuleProviderSource::Inline` is a caly-private extension: the
-//! YAML body is carried inside the `payload:` key of the
-//! `rule-providers:` block, but the upstream Mihomo kernel
-//! does not understand that shape — it expects
-//! `type: file` / `type: http` only. To keep the operator
-//! experience ergonomic (no operator needs to manage a
-//! separate file for an inline payload) without breaking
-//! the kernel, the daemon materialises every `Inline`
-//! provider to `<workdir>/rule-providers/<name>.yaml` at
-//! boot and rewrites the in-memory provider to
-//! `File { path: <that file> }` before the rendering
-//! pipeline sees it.
+//! `RuleProviderSource::Inline` is a caly-private extension: the YAML body
+//! lives in the `payload:` key, which upstream Mihomo does not understand
+//! (it expects `type: file` / `type: http` only). To keep the operator
+//! experience ergonomic without breaking the kernel, the daemon materialises
+//! every `Inline` provider to `<workdir>/rule-providers/<name>.yaml` at boot
+//! and rewrites the in-memory provider to `File { path }` before the
+//! rendering pipeline sees it.
 //!
-//! The function is deterministic and pure on the disk
-//! layout: re-running it is a no-op (atomic temp + rename
-//! so a partial write never leaves a half-body on disk).
-//! Failures are surfaced as [`InlineMaterializeError`],
-//! which the caller maps to a `CompositionError` so a
-//! misconfigured inline payload fails the daemon at boot
-//! rather than silently dropping the rule body.
+//! Deterministic and pure on the disk layout: re-running is a no-op (atomic
+//! temp + rename, so a partial write never leaves a half-body on disk).
+//! Failures surface as [`InlineMaterializeError`], which the caller maps to
+//! a `CompositionError` so a misconfigured inline payload fails the daemon
+//! at boot rather than silently dropping the rule body.
 
 use std::{
     fs,
@@ -118,12 +111,13 @@ pub fn materialize_inline_providers(
     for provider in providers {
         match &provider.source {
             RuleProviderSource::Inline { payload } => {
+                let id = provider.name.as_str().to_owned();
                 let body = payload.as_str();
                 let body_bytes = body.len();
                 let limit = caly_domain::INLINE_RULE_PAYLOAD_MAX_BYTES;
                 if body_bytes > limit {
                     return Err(InlineMaterializeError::BodyTooLarge {
-                        id: provider.name.as_str().to_owned(),
+                        id,
                         actual: body_bytes,
                         limit,
                     });
@@ -132,19 +126,17 @@ pub fn materialize_inline_providers(
                 // check, a crafted name (`../../etc/x`) materialises outside
                 // the work directory. Profile ids and proxy group names obey
                 // the same rule at the schema layer; this mirrors it here.
-                if !caly_domain::is_path_safe_component(provider.name.as_str()) {
-                    return Err(InlineMaterializeError::UnsafeName {
-                        id: provider.name.as_str().to_owned(),
-                    });
+                if !caly_domain::is_path_safe_component(&id) {
+                    return Err(InlineMaterializeError::UnsafeName { id });
                 }
-                let file_path = dir.join(format!("{}.yaml", provider.name.as_str()));
+                let file_path = dir.join(format!("{id}.yaml"));
                 write_atomic(&file_path, body).map_err(|reason| InlineMaterializeError::Io {
-                    id: provider.name.as_str().to_owned(),
+                    id: id.clone(),
                     path: file_path.clone(),
                     reason,
                 })?;
                 materialized.push(MaterializedInline {
-                    name: provider.name.as_str().to_owned(),
+                    name: id,
                     file_path: file_path.clone(),
                     body_bytes,
                 });

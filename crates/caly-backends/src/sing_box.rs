@@ -6,10 +6,7 @@ use caly_corectl::sing_box::SingBoxRuntime;
 use caly_domain::BoundedText;
 use caly_ports::{ActorFailure, CoreLifecycleCommandBackend};
 
-/// Budget for re-applying the persisted node selection after a core start.
-/// Strictly below the start budget so the restore cannot stall the lifecycle
-/// window; a failure here is logged, never fatal.
-const CONTROL_RESTORE_TIMEOUT: Duration = Duration::from_secs(3);
+use crate::lifecycle::CONTROL_RESTORE_TIMEOUT;
 
 /// sing-box lifecycle backend using the same operation handler contract.
 pub struct SingBoxLifecycleBackend {

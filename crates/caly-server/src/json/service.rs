@@ -77,11 +77,6 @@ impl<A> JsonService<A> {
         })
     }
 
-    /// Number of currently live sessions; used by tests and diagnostics.
-    pub fn live_sessions(&self) -> usize {
-        self.state.lock().map_or(0, |state| state.registry.len())
-    }
-
     /// Transport message ceiling (bytes) derived from the decode limits.
     pub fn message_ceiling(&self) -> usize {
         self.state

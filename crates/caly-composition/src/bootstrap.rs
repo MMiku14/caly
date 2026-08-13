@@ -8,7 +8,10 @@ use caly_application::{
     ActorCommandFanout,
     actor_result::{ActorResultClient, ActorResultReceiver, actor_result_mailbox},
     projection::ProjectionRuntime,
-    runtime::{CancellationToken, TokioTaskFailure, TokioTaskGroup, actor_mailbox},
+    runtime::{
+        ActorIngress, ActorReceiver, CancellationToken, TokioTaskFailure, TokioTaskGroup,
+        actor_mailbox,
+    },
 };
 use caly_backends::dual::DualCoreLifecycle;
 
@@ -35,19 +38,14 @@ struct ActorChannels {
 
 fn open_channels(capacities: RuntimeCapacities) -> Result<ActorChannels, CompositionError> {
     let (core_lifecycle, core_lifecycle_receiver) =
-        actor_mailbox(capacities.actor_mailbox).map_err(|_| CompositionError::MailboxCapacity)?;
-    let (config, config_receiver) =
-        actor_mailbox(capacities.actor_mailbox).map_err(|_| CompositionError::MailboxCapacity)?;
-    let (core, core_receiver) =
-        actor_mailbox(capacities.actor_mailbox).map_err(|_| CompositionError::MailboxCapacity)?;
-    let (subscription, subscription_receiver) =
-        actor_mailbox(capacities.actor_mailbox).map_err(|_| CompositionError::MailboxCapacity)?;
-    let (platform, platform_receiver) =
-        actor_mailbox(capacities.actor_mailbox).map_err(|_| CompositionError::MailboxCapacity)?;
+        open_mailbox(capacities.actor_mailbox)?;
+    let (config, config_receiver) = open_mailbox(capacities.actor_mailbox)?;
+    let (core, core_receiver) = open_mailbox(capacities.actor_mailbox)?;
+    let (subscription, subscription_receiver) = open_mailbox(capacities.actor_mailbox)?;
+    let (platform, platform_receiver) = open_mailbox(capacities.actor_mailbox)?;
     let (result_ingress, result_receiver) = actor_result_mailbox(capacities.actor_mailbox)
         .map_err(|_| CompositionError::MailboxCapacity)?;
-    let (telemetry_ingress, telemetry_receiver) =
-        actor_mailbox(capacities.actor_mailbox).map_err(|_| CompositionError::MailboxCapacity)?;
+    let (telemetry_ingress, telemetry_receiver) = open_mailbox(capacities.actor_mailbox)?;
     Ok(ActorChannels {
         fanout: ActorCommandFanout {
             core_lifecycle,
@@ -68,6 +66,14 @@ fn open_channels(capacities: RuntimeCapacities) -> Result<ActorChannels, Composi
     })
 }
 
+/// Opens a bounded actor mailbox, mapping a capacity failure to the
+/// composition error.
+fn open_mailbox<M: Send>(
+    capacity: usize,
+) -> Result<(ActorIngress<M>, ActorReceiver<M>), CompositionError> {
+    actor_mailbox(capacity).map_err(|_| CompositionError::MailboxCapacity)
+}
+
 mod boot_gate;
 
 use boot_gate::boot_sequence;
@@ -82,14 +88,8 @@ fn spawn_dispatcher(
     cancellation: CancellationToken,
     runtime_guard: std::sync::Arc<std::sync::Mutex<caly_application::runtime::RuntimeGuard>>,
 ) -> Result<(), CompositionError> {
-    // Resolve the task name once. The previous implementation called
-    // `task_name("command-dispatcher")` twice: once for the outer
-    // `spawn_owned_with_fault` registration, then a second time inside the
-    // inner `Join` error path with an `unwrap_or_else(|_| abort)` fallback.
-    // The second call could not fail in practice (the input is a static
-    // literal), but the abort fallback made the call site inconsistent with
-    // the call to `task_name(...)` two lines earlier and hid the size
-    // invariant behind a process-kill. Resolve once and clone the result.
+    // Resolve the bounded task name once and reuse it for the outer
+    // registration and the inner Join error path.
     let dispatcher_name = task_name("command-dispatcher")?;
     let join_name = dispatcher_name.clone();
     let dispatcher_cancellation = cancellation;
@@ -266,13 +266,43 @@ fn spawn_runtime_tasks(
     runtime_guard: std::sync::Arc<std::sync::Mutex<caly_application::runtime::RuntimeGuard>>,
     restart_backoffs: (u64, u64),
 ) -> Result<RuntimeHandles, CompositionError> {
-    spawn_command_tasks(
+    // 刀 2 (2026-08-12 pipeline design): the shared event bus carries
+    // pipeline facts; the config reconciler subscribes and reacts to a
+    // changed subscription refresh by re-rendering the kernel config. The
+    // config mailbox is cloned before the dispatcher takes ownership of the
+    // fanout below.
+    let fanout = channels.fanout;
+    let result_receiver = channels.result_receiver;
+    let config_mailbox = fanout.config.clone();
+    let event_bus = caly_application::events::EventBus::new();
+    spawn_dispatcher(
         tasks,
         service,
         command_receiver,
-        channels.fanout,
-        channels.result_receiver,
+        fanout,
+        result_receiver,
+        cancellation.clone(),
+        runtime_guard,
+    )?;
+    super::handlers::spawn_exit_monitor(
+        tasks,
+        lifecycle_backend.clone(),
         channels.result_client.clone(),
+        cancellation.clone(),
+        restart_backoffs.0,
+        restart_backoffs.1,
+    )?;
+    // Explicit publish→subscribe contract replacing the ad-hoc hook:
+    // `SubscriptionRefreshed { changed: true }` → `ReloadConfig`, and the
+    // selection reconciler follows node renames by stable id (刀 3).
+    caly_application::reconciler::ConfigReconciler::spawn(event_bus.clone(), config_mailbox);
+    super::selection_reconciler::spawn(
+        event_bus.clone(),
+        registry,
+        lifecycle_backend.active_cell(),
+    );
+    super::handlers::spawn_handlers(
+        tasks,
         super::handlers::HandlerReceivers {
             core_lifecycle: channels.core_lifecycle_receiver,
             config: channels.config_receiver,
@@ -280,16 +310,16 @@ fn spawn_runtime_tasks(
             subscription: channels.subscription_receiver,
             platform: channels.platform_receiver,
         },
-        lifecycle_backend,
+        cancellation.clone(),
+        channels.result_client.clone(),
         core_backend,
         subscription_backend,
         platform_backend,
         tun_backend,
+        lifecycle_backend.clone(),
         config_backend,
-        registry,
-        cancellation.clone(),
-        runtime_guard,
-        restart_backoffs,
+        lifecycle_backend.active_cell(),
+        event_bus,
     )?;
     super::handlers::spawn_supervision(
         tasks,
@@ -307,73 +337,4 @@ fn spawn_runtime_tasks(
         result_client: channels.result_client,
         telemetry_ingress: channels.telemetry_ingress,
     })
-}
-
-/// Spawns the command dispatcher, exit monitor and five owner handlers.
-fn spawn_command_tasks(
-    tasks: &mut TokioTaskGroup,
-    service: std::sync::Arc<std::sync::Mutex<RuntimeService<WallClock, ProjectionRuntime>>>,
-    command_receiver: CommandReceiver,
-    fanout: ActorCommandFanout,
-    result_receiver: ActorResultReceiver,
-    result_client: ActorResultClient,
-    receivers: super::handlers::HandlerReceivers,
-    lifecycle_backend: &DualCoreLifecycle,
-    core_backend: caly_backends::dual::SwitchableCoreBackend,
-    subscription_backend: caly_backends::HttpSubscriptionBackend,
-    platform_backend: super::SharedPlatformBackend,
-    tun_backend: super::SharedTunBackend,
-    config_backend: caly_backends::config::ActiveConfigBackend,
-    registry: caly_backends::CoreNodeRegistry,
-    cancellation: caly_application::runtime::CancellationToken,
-    runtime_guard: std::sync::Arc<std::sync::Mutex<caly_application::runtime::RuntimeGuard>>,
-    restart_backoffs: (u64, u64),
-) -> Result<(), CompositionError> {
-    // 刀 2 (2026-08-12 pipeline design): the shared event bus carries
-    // pipeline facts; the config reconciler subscribes and reacts to a
-    // changed subscription refresh by re-rendering the kernel config. The
-    // config mailbox is cloned before the dispatcher takes ownership of the
-    // fanout below.
-    let config_mailbox = fanout.config.clone();
-    let event_bus = caly_application::events::EventBus::new();
-    spawn_dispatcher(
-        tasks,
-        service,
-        command_receiver,
-        fanout,
-        result_receiver,
-        cancellation.clone(),
-        runtime_guard,
-    )?;
-    super::handlers::spawn_exit_monitor(
-        tasks,
-        lifecycle_backend.clone(),
-        result_client.clone(),
-        cancellation.clone(),
-        restart_backoffs.0,
-        restart_backoffs.1,
-    )?;
-    // Explicit publish→subscribe contract replacing the ad-hoc hook:
-    // `SubscriptionRefreshed { changed: true }` → `ReloadConfig`, and the
-    // selection reconciler follows node renames by stable id (刀 3).
-    caly_application::reconciler::ConfigReconciler::spawn(event_bus.clone(), config_mailbox);
-    super::selection_reconciler::spawn(
-        event_bus.clone(),
-        registry,
-        lifecycle_backend.active_cell(),
-    );
-    super::handlers::spawn_handlers(
-        tasks,
-        receivers,
-        cancellation,
-        result_client,
-        core_backend,
-        subscription_backend,
-        platform_backend,
-        tun_backend,
-        lifecycle_backend.clone(),
-        config_backend,
-        lifecycle_backend.active_cell(),
-        event_bus,
-    )
 }

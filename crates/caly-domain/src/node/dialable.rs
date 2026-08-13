@@ -3,8 +3,8 @@
 use crate::{BoundedText, BoundedVec, NodeId};
 
 use super::{
-    DisplayNode, Endpoint, NodeDisplayName, NodeProtocolLabel, NodeSource, NodeValidationError,
-    Protocol, TlsConfig, Transport, canonical, validation,
+    canonical, validation, DisplayNode, Endpoint, NodeDisplayName, NodeProtocolLabel, NodeSource,
+    NodeValidationError, Protocol, TlsConfig, Transport,
 };
 
 /// Maximum number of normalized node tags.
@@ -129,19 +129,6 @@ impl NodeBuilder {
         self.tls = Some(tls);
         self
     }
-    /// Adds chained dialing identity before identity calculation.
-    #[must_use]
-    pub fn with_dialer_proxy(mut self, node: NodeId) -> Self {
-        self.dialer_proxy = Some(node);
-        self
-    }
-    /// Adds validated tags that do not affect dial identity.
-    #[must_use]
-    pub fn with_tags(mut self, tags: NodeTags) -> Self {
-        self.tags = tags;
-        self
-    }
-
     /// Validates all fields, then computes SHA-256/128 over canonical identity.
     pub fn build(self) -> Result<DialableNode, NodeValidationError> {
         validation::validate(&self.protocol, &self.tags)?;

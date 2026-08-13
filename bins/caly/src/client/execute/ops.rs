@@ -20,17 +20,20 @@ use caly_protocol::{
 use super::super::{hex, operation_id, output};
 use super::lowest_latency_node;
 
-/// Executes a Round-17 lifecycle command whose operation completes on the
-/// application side in the same `execute` call: the server returns the
-/// final `WireOperationStatus` inside the `ExecuteResponse`, so the client
-/// must NOT poll (the `StopDaemon` path closes the UDS socket right after
-/// the response, and polling for a stale id would surface a confusing
-/// `connect_failed` error). If the response is somehow non-terminal
-/// (defensive), fall through to a bounded poll.
-pub(super) fn execute_lifecycle_immediate(
+/// Submits one operation, then reports the outcome. `immediate` callers
+/// (stop daemon / reload config) run the Round-17 lifecycle path: the
+/// server returns the final `WireOperationStatus` inside the
+/// `ExecuteResponse`, so the client must NOT poll (the `StopDaemon` path
+/// closes the UDS socket right after the response, and polling for a
+/// stale id would surface a confusing `connect_failed` error). If the
+/// response is somehow non-terminal (defensive), fall through to a
+/// bounded poll. The mutation path (`immediate: false`) always polls to
+/// a terminal state.
+pub(super) fn execute_operation(
     client: &mut UdsClient,
     json: bool,
     summary: &str,
+    immediate: bool,
     build: impl FnOnce([u8; 16]) -> WireCommand,
 ) -> ExitCode {
     let id = operation_id();
@@ -38,36 +41,10 @@ pub(super) fn execute_lifecycle_immediate(
         operation_id: id,
         command: build(id),
     }) {
-        Ok(response) => {
-            let status = response.operation;
-            if status.state.is_terminal() {
-                output::print_operation_status(&status, json, summary);
-                terminal_exit_code(status.state)
-            } else {
-                // Defensive: the typed path is supposed to be terminal here,
-                // but the server may be running an older build that returns a
-                // non-terminal status. Poll for a bounded window so the
-                // caller still gets a definitive answer.
-                poll_operation(client, id, json, summary)
-            }
+        Ok(response) if immediate && response.operation.state.is_terminal() => {
+            output::print_operation_status(&response.operation, json, summary);
+            terminal_exit_code(response.operation.state)
         }
-        Err(error) => output::report_error(error, json),
-    }
-}
-
-/// The single mutation path: assign an operation id, execute the command the
-/// caller builds from it, then poll to a terminal state.
-pub(super) fn execute_operation_with(
-    client: &mut UdsClient,
-    json: bool,
-    summary: &str,
-    build: impl FnOnce([u8; 16]) -> WireCommand,
-) -> ExitCode {
-    let id = operation_id();
-    match client.execute(ExecuteRequest {
-        operation_id: id,
-        command: build(id),
-    }) {
         Ok(_) => poll_operation(client, id, json, summary),
         Err(error) => output::report_error(error, json),
     }
@@ -78,7 +55,7 @@ pub(super) fn execute_set_mode(client: &mut UdsClient, mode: &str, json: bool) -
     let Some(mode_value) = WireMode::from_label(mode) else {
         return output::report_usage_error("mode must be rule, global, or direct", json);
     };
-    execute_operation_with(client, json, &format!("set mode to {mode}"), |_| {
+    execute_operation(client, json, &format!("set mode to {mode}"), false, |_| {
         WireCommand::SetMode {
             mode: mode_value.wire(),
         }
@@ -97,10 +74,11 @@ pub(super) fn execute_switch_core(client: &mut UdsClient, target: &str, json: bo
             );
         }
     };
-    execute_operation_with(
+    execute_operation(
         client,
         json,
         &format!("switch core to {}", kind.label()),
+        false,
         |_| WireCommand::SwitchCore {
             core_kind: kind.wire(),
             action: WireCoreAction::Restart.wire(),
@@ -141,7 +119,7 @@ pub(super) fn execute_core(
         WireCoreAction::Stop => "stop",
         WireCoreAction::Restart => "restart",
     };
-    execute_operation_with(client, json, &format!("{verb} {label}"), |_| {
+    execute_operation(client, json, &format!("{verb} {label}"), false, |_| {
         WireCommand::SwitchCore {
             core_kind: kind.wire(),
             action: action.wire(),
@@ -188,9 +166,13 @@ pub(super) fn execute_select_proxy(
             return ExitCode::from(2);
         };
         let label = best.1;
-        return execute_operation_with(client, json, &format!("select node `{label}`"), |_| {
-            WireCommand::SelectProxy { node_id: best.0 }
-        });
+        return execute_operation(
+            client,
+            json,
+            &format!("select node `{label}`"),
+            false,
+            |_| WireCommand::SelectProxy { node_id: best.0 },
+        );
     }
     let Some(node) = node else {
         // W2 (cli-v3-design.md §7): no argument on a live terminal
@@ -201,9 +183,13 @@ pub(super) fn execute_select_proxy(
     let Some((node_id, label)) = resolve_node(client, node, json) else {
         return ExitCode::from(2);
     };
-    execute_operation_with(client, json, &format!("select node `{label}`"), |_| {
-        WireCommand::SelectProxy { node_id }
-    })
+    execute_operation(
+        client,
+        json,
+        &format!("select node `{label}`"),
+        false,
+        |_| WireCommand::SelectProxy { node_id },
+    )
 }
 
 /// The `caly node select` no-argument face (§7). The picker lists
@@ -289,9 +275,13 @@ fn select_without_argument(client: &mut UdsClient, poll: bool, json: bool) -> Ex
                 );
             };
             let label = &entry.name;
-            execute_operation_with(client, json, &format!("select node `{label}`"), |_| {
-                WireCommand::SelectProxy { node_id }
-            })
+            execute_operation(
+                client,
+                json,
+                &format!("select node `{label}`"),
+                false,
+                |_| WireCommand::SelectProxy { node_id },
+            )
         }
         Ok(crate::client::interact_live::LiveOutcome::Escaped) => {
             eprintln!("\n{}", crate::output::CANCELLED_NOTHING_CHANGED);

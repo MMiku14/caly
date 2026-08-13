@@ -2,7 +2,7 @@
 
 use core::{fmt, marker::PhantomData, ops::Deref, slice};
 
-use serde::{Deserialize, Deserializer, de};
+use serde::{de, Deserialize, Deserializer};
 
 /// Error returned when constructing or extending a bounded collection.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -276,11 +276,6 @@ pub struct BoundedExtendError<T> {
 }
 
 impl<T> BoundedExtendError<T> {
-    /// Recovers the values that were not appended.
-    pub fn into_values(self) -> Vec<T> {
-        self.values
-    }
-
     /// Returns capacity failure details.
     pub const fn capacity_error(&self) -> CapacityError {
         self.error
