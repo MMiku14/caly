@@ -180,9 +180,10 @@ fn render(
     let mut index = offset;
     while line <= rows.saturating_sub(1) && index < entries.len() {
         let item = &entries[index];
-        let latency = item
-            .latency_ms
-            .or_else(|| lat.get(&item.name).copied().flatten());
+        let latency = resolve_latency(
+            item.latency_ms,
+            lat.get(&item.name).copied().flatten(),
+        );
         let row = live_row(&item.protocol, &item.name, latency);
         write_row(term, line, selected == index + 1, &row, false)?;
         index += 1;
@@ -246,6 +247,19 @@ pub(crate) fn ping_feature_row(state: &PingState, count: usize) -> String {
     }
 }
 
+/// Resolves the latency to display for one live row.
+///
+/// The in-picker sweep (header-row `ping` feature) publishes fresh median
+/// latencies into the shared map; those must win over the snapshot's stale
+/// `latency_ms` (the kernel's historical/last-test value) — otherwise the
+/// header feature would never visibly update the latency column. The
+/// snapshot value remains the fallback for nodes the sweep has not yet
+/// reached (in-flight or unreachable), so a partially-finished sweep still
+/// shows the last known latency instead of a blank.
+fn resolve_latency(snapshot_ms: Option<u32>, swept_ms: Option<u32>) -> Option<u32> {
+    swept_ms.or(snapshot_ms)
+}
+
 /// One entry row, §7 layout: `[protocol]` badge, 24-char name,
 /// right-aligned `{ms} ms` latency (`-` when untested).
 pub(crate) fn live_row(protocol: &str, name: &str, latency: Option<u32>) -> String {
@@ -303,6 +317,17 @@ mod tests {
             ping_feature_row(&failed, 45),
             "[ping] sweep failed (daemon unreachable) · retry with Enter"
         );
+    }
+
+    #[test]
+    fn resolve_latency_prefers_the_swept_value() {
+        // The header-row ping feature must visibly update the column:
+        // a fresh swept median wins over the snapshot's stale value.
+        assert_eq!(resolve_latency(Some(120), Some(45)), Some(45));
+        // Sweep not yet reached this node: snapshot fallback (not blank).
+        assert_eq!(resolve_latency(Some(120), None), Some(120));
+        // Untested everywhere.
+        assert_eq!(resolve_latency(None, None), None);
     }
 
     #[test]
