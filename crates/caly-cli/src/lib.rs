@@ -20,20 +20,20 @@ use crate::cli::{Command, parse_args};
 use crate::output::CliOutput;
 
 pub mod cli;
-pub mod client;
-pub mod commands;
+pub(crate) mod client;
+pub(crate) mod commands;
 /// Layered `config.yaml` read/parse surface (P8a: moved up from the
 /// daemon host so offline CLI commands share one loader with boot).
 pub mod config;
 /// DNS probing for `tool dns` (P8a: moved up from the daemon host —
 /// pure caly-dns + std, no host internals).
 pub(crate) mod dns;
-pub mod doctor;
+pub(crate) mod doctor;
 /// Entry-tree renderer (cli-v3-design.md G1 / W3a): the shared 三区制
 /// layout behind `sub parse` and `node list --offline --format=tree`.
 mod entry_tree;
-pub mod error;
-pub mod output;
+pub(crate) mod error;
+pub(crate) mod output;
 mod subscription;
 
 /// Cross-module test helpers. Round 26 collapsed 11

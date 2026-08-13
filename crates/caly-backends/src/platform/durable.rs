@@ -6,14 +6,14 @@ use std::sync::Arc;
 
 use caly_domain::PlatformEffectView;
 use caly_platform::{
-    PlatformFailure,
     recovery::{ProxyRecoveryAction, ProxyRecoveryRecord, ProxyRecoveryStore, RecoveryPhase},
+    PlatformFailure,
 };
 use caly_ports::{ActorFailure, PlatformCommandBackend};
 
 use super::{
-    LinuxSystemProxyBackend,
     durable_support::{actor_to_platform, durable_failure},
+    LinuxSystemProxyBackend,
 };
 
 /// Shared durable proxy recovery store handle.

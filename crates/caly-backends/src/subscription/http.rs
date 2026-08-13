@@ -4,17 +4,17 @@ use crate::core::MihomoNodeRegistry;
 use caly_domain::SubscriptionId;
 use caly_platform::paths::{AppPaths, SafeName};
 use caly_ports::{ActorFailure, RefreshOutcome, SubscriptionCommandBackend};
-use caly_profile::loader::{LayeredConfigPaths, LoaderLimits, load_layered_yaml_strict};
+use caly_profile::loader::{load_layered_yaml_strict, LayeredConfigPaths, LoaderLimits};
 use caly_subscription::net::{prefer_public_addresses, resolve_host_with_retry};
 /// P8b: intake-domain function moved up to `caly_subscription::id`;
 /// re-exported here so adapter internals keep their call sites.
 use caly_subscription::subscription_id_for_url;
 use caly_subscription::{
-    FetchPolicy, FetchResult, FetchValidators, ResolvedAddresses, fetch_pinned,
+    fetch_pinned, FetchPolicy, FetchResult, FetchValidators, ResolvedAddresses,
 };
 
-use super::PublicAddressClassifier;
 use super::render_compose::uri_body_to_sing_box_json_with;
+use super::PublicAddressClassifier;
 
 mod expansion;
 

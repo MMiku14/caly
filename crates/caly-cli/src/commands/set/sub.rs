@@ -45,7 +45,7 @@ use std::process::ExitCode;
 
 use crate::cli::SetSubCmd;
 use crate::client::subscription as cmd;
-use crate::commands::set::common::{run_standard_writer, ResourceVerb};
+use crate::commands::set::common::{crud_dispatch, ResourceVerb};
 use crate::output::CliOutput;
 
 /// The singular resource name used by
@@ -190,13 +190,14 @@ pub fn dispatch_with_paths(
             };
             crud_dispatch(
                 output,
-                paths,
+                CLI_PREFIX,
+                NOUN,
                 &url,
-                ResourceVerb::Add,
                 apply,
-                |paths, url, apply| {
-                    cmd::add_source(paths, url, name.as_deref(), refresh_every_minutes, apply)
-                },
+                false,
+                ResourceVerb::Add,
+                |apply| cmd::add_source(paths, &url, name.as_deref(), refresh_every_minutes, apply),
+                code_for,
             )
         }
         SetSubCmd::Remove {
@@ -268,49 +269,6 @@ pub fn dispatch_with_paths(
     }
 }
 
-/// Round 30: the inner dispatch helper for the 4
-/// standard CRUD leaves. Pre-Round 30 each of the
-/// `Add` / `Remove` / `Enable` / `Disable` arms
-/// in [`dispatch_with_paths`] was an 8-line
-/// `run_standard_writer(...)` call that differed
-/// only in the `ResourceVerb` variant + the
-/// `cmd::*_source` writer function. The 4 arms
-/// are now collapsed into this single helper:
-/// the verb + the writer closure are the only
-/// per-call data, the leaf string / envelope /
-/// summary / classify / payload are all folded
-/// into `run_standard_writer`.
-///
-/// `W` is the writer closure type; the
-/// `Fn(&AppPaths, &str, bool) -> Result<SubWriteOutcome, SubCmdError>`
-/// signature matches the 4 `cmd::*_source`
-/// functions exactly.
-fn crud_dispatch<W>(
-    output: CliOutput,
-    paths: &caly_platform::paths::AppPaths,
-    url: &str,
-    verb: ResourceVerb,
-    apply: bool,
-    writer: W,
-) -> ExitCode
-where
-    W: FnOnce(
-        &caly_platform::paths::AppPaths,
-        &str,
-        bool,
-    ) -> Result<cmd::SubWriteOutcome, cmd::SubCmdError>,
-{
-    run_standard_writer(
-        output,
-        CLI_PREFIX,
-        NOUN,
-        verb,
-        url,
-        || writer(paths, url, apply),
-        code_for,
-    )
-}
-
 /// Runs a CRUD verb, then — when it applied successfully (not dry-run)
 /// and the verb changes the enabled node set (remove/disable/enable) —
 /// triggers a full daemon refresh so the node registry and the kernel
@@ -331,7 +289,17 @@ fn crud_and_converge(
         bool,
     ) -> Result<cmd::SubWriteOutcome, cmd::SubCmdError>,
 ) -> ExitCode {
-    let code = crud_dispatch(output, paths, url, verb, apply, writer);
+    let code = crud_dispatch(
+        output,
+        CLI_PREFIX,
+        NOUN,
+        url,
+        apply,
+        false,
+        verb,
+        |apply| writer(paths, url, apply),
+        code_for,
+    );
     if apply
         && code == ExitCode::SUCCESS
         && matches!(
@@ -409,9 +377,7 @@ fn refresh_leaf_dispatch(
     let subscription_id = match target.as_deref() {
         None => None,
         Some(token) => match cmd::resolve_source_ref(paths, token) {
-            Ok(url) => {
-                Some(caly_subscription::subscription_id_for_url(&url).into_bytes())
-            }
+            Ok(url) => Some(caly_subscription::subscription_id_for_url(&url).into_bytes()),
             Err(error) => {
                 let leaf = format!("set sub refresh {token}");
                 let mut cli =

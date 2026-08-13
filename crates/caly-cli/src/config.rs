@@ -14,12 +14,12 @@
 
 use std::{fmt, path::PathBuf};
 
-use caly_platform::paths::CoreBinaryPaths;
 use caly_domain::{Controllers, CoreKind};
+use caly_platform::paths::CoreBinaryPaths;
 use caly_platform::paths::{AppPaths, SafeName};
 use caly_platform::tun::TunEscalation;
 use caly_profile::{
-    loader::{LayeredConfigPaths, LoaderLimits, load_layered_yaml_strict},
+    loader::{load_layered_yaml_strict, LayeredConfigPaths, LoaderLimits},
     schema::{AppConfig, CoreConfig, KernelConfig, SnifferConfig},
 };
 use caly_subscription::FetchPolicy;
@@ -138,9 +138,7 @@ pub fn routing_rules_from_config(config: Option<&AppConfig>) -> Vec<caly_domain:
 /// schema layer; the loader only translates the deserialized
 /// `RuleProviderConfig` into the domain [`caly_domain::RuleProvider`]
 /// for the runtime tuning bundle.
-pub fn rule_providers_from_config(
-    config: Option<&AppConfig>,
-) -> Vec<caly_domain::RuleProvider> {
+pub fn rule_providers_from_config(config: Option<&AppConfig>) -> Vec<caly_domain::RuleProvider> {
     let Some(config) = config else {
         return Vec::new();
     };

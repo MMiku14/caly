@@ -109,6 +109,17 @@ pub fn hermetic_paths(dir: &std::path::Path) -> caly_platform::paths::AppPaths {
     caly_platform::paths::AppPaths::from_env_vars(&env)
 }
 
+/// Builds a unique file path under `std::env::temp_dir()`
+/// for a single test fixture: `caly-{prefix}-{label}-{pid}`.
+/// The `pid` disambiguates parallel test processes; the
+/// `label` identifies the fixture in failure diagnostics.
+/// The file is *not* created — callers write / remove it
+/// themselves.
+#[cfg(test)]
+pub fn unique_file(prefix: &str, label: &str) -> std::path::PathBuf {
+    std::env::temp_dir().join(format!("caly-{prefix}-{label}-{}", std::process::id()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

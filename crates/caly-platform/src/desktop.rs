@@ -176,7 +176,11 @@ fn endpoint_port(endpoint: &str) -> Option<u16> {
     port?.parse::<u16>().ok()
 }
 
-fn split_endpoint_parts(endpoint: &str) -> (&str, Option<&str>) {
+/// Bracket-aware endpoint splitter, shared with the GNOME write side
+/// (`caly-backends::platform::gnome`) so read and write parse endpoints
+/// identically: `[v6]:port` / `host:port` → `(host, Some(port))`; a bare
+/// IPv6 literal or port-less host → `(host, None)`.
+pub fn split_endpoint_parts(endpoint: &str) -> (&str, Option<&str>) {
     if let Some(rest) = endpoint.strip_prefix('[')
         && let Some(close) = rest.find(']')
     {

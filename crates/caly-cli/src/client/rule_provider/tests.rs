@@ -3,20 +3,10 @@
 
 use super::*;
 use crate::test_helpers::temp_root;
-use std::ffi::OsString;
 use std::fs;
 
 fn seed_at_roots(dir: &std::path::Path) -> AppPaths {
-    let env = |key: &str| -> Option<OsString> {
-        match key {
-            "HOME" => Some(OsString::from("/home/test")),
-            "XDG_RUNTIME_DIR" => Some(OsString::from("/run/user/1000")),
-            "XDG_STATE_HOME" => Some(OsString::from(dir.as_os_str())),
-            "XDG_CONFIG_HOME" => Some(OsString::from(dir.as_os_str())),
-            _ => None,
-        }
-    };
-    let paths = AppPaths::from_env_vars(&env);
+    let paths = crate::test_helpers::hermetic_paths(dir);
     let target = paths.config.join("config.yaml");
     fs::create_dir_all(&paths.config).unwrap();
     fs::write(

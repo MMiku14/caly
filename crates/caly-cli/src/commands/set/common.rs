@@ -283,12 +283,12 @@ impl OutcomeKind {
     /// confirmed the state was already what I asked
     /// for".
     #[allow(dead_code)] // test-only consumer in the bin
-    // unit (the locked-table test in
-    // `tests` matches every kind).
-    // Reserved for a future refresh
-    // leaf that needs the
-    // discriminator without
-    // hand-rolling the match.
+                        // unit (the locked-table test in
+                        // `tests` matches every kind).
+                        // Reserved for a future refresh
+                        // leaf that needs the
+                        // discriminator without
+                        // hand-rolling the match.
     pub const fn is_no_change(self) -> bool {
         matches!(self, Self::NoChange)
     }
@@ -358,4 +358,4 @@ mod outcome_kind_tests;
 
 mod writers;
 
-pub use writers::{run_standard_writer, run_writer};
+pub use writers::{crud_dispatch, run_standard_writer, run_writer};

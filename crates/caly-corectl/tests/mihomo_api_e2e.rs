@@ -120,8 +120,22 @@ fn e2e_lock() -> E2eLockGuard {
                         .is_ok_and(|status| status.success())
                 });
                 if !holder_alive {
-                    let _ = std::fs::remove_dir_all(&path);
-                    continue;
+                    // A missing/unparseable pid does NOT mean the holder is
+                    // dead: an acquirer creates the dir and only then writes
+                    // the pid file, so a waiter polling inside that window
+                    // would steal the lock from a LIVE holder and two suites
+                    // would run concurrently. Only take over a dir whose pid
+                    // is missing AND whose mtime is older than a few seconds
+                    // (holder died inside the create -> write window).
+                    let stale = std::fs::metadata(&path)
+                        .and_then(|meta| meta.modified())
+                        .ok()
+                        .and_then(|modified| modified.elapsed().ok())
+                        .is_some_and(|age| age > std::time::Duration::from_secs(5));
+                    if stale {
+                        let _ = std::fs::remove_dir_all(&path);
+                        continue;
+                    }
                 }
                 if std::time::Instant::now() > deadline {
                     panic!("timed out waiting for the e2e suite lock");
@@ -166,13 +180,27 @@ fn mihomo_real_binary_exposes_rich_clash_api() -> E2eResult {
     assert!(caps.is_usable(caly_domain::Capability::Traffic));
 
     // /proxies returns the default groups even with no nodes configured.
-    let groups = api
+    // The vendored mihomo registers its default groups ~100ms AFTER the
+    // control API starts answering /version; a query in that window returns
+    // HTTP 200 with an empty map. Poll briefly instead of asserting on the
+    // first response (bounded readiness wait, not a retry that hides failure).
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    let mut groups = api
         .proxy_groups(Duration::from_secs(2))
         .map_err(e2e_error)?;
+    while !groups.iter().any(|g| g.name == "GLOBAL" || g.name == "DIRECT")
+        && std::time::Instant::now() < deadline
+    {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        groups = api
+            .proxy_groups(Duration::from_secs(2))
+            .map_err(e2e_error)?;
+    }
     assert!(
         groups
             .iter()
-            .any(|g| g.name == "GLOBAL" || g.name == "DIRECT")
+            .any(|g| g.name == "GLOBAL" || g.name == "DIRECT"),
+        "default groups never registered; last /proxies response: {groups:?}"
     );
 
     // /connections and /traffic respond with a valid summary.

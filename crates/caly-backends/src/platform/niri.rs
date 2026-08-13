@@ -65,12 +65,8 @@ fn niri_env_path() -> Result<PathBuf, ActorFailure> {
     Ok(PathBuf::from(home).join(".config/environment.d/caly-proxy.conf"))
 }
 
-/// Captures the current niri proxy state as `(mode, endpoint)`.
-///
-/// The session file is caly-owned; its presence with a parseable export means
-/// a manual proxy endpoint was active. Unreadable state degrades to `none`.
-
-
+/// Restores a captured niri proxy state: rewrites the `environment.d` file
+/// with the captured endpoint (manual), or clears the proxy variables.
 pub(crate) fn restore(endpoint: &str, manual: bool) -> Result<(), ActorFailure> {
     let contents = if manual && !endpoint.is_empty() {
         manual_environment_contents(endpoint)
@@ -110,12 +106,6 @@ mod tests {
         assert!(contents.contains("unset https_proxy"));
         assert!(!contents.contains("export http_proxy"));
     }
-
-    #[test]
-
-
-    #[test]
-
 
     #[test]
     fn manual_environment_uses_captured_endpoint() {

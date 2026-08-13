@@ -219,10 +219,7 @@ fn dns_nameservers_lists_configured_resolvers() {
 fn tun_escalation_maps_config_values() {
     use caly_platform::tun::TunEscalation;
     let root = temp_root("escalation-absent");
-    assert_eq!(
-        tun_escalation_from(root.clone()),
-        TunEscalation::Auto
-    );
+    assert_eq!(tun_escalation_from(root.clone()), TunEscalation::Auto);
     fs::remove_dir_all(&root).ok();
 
     for (value, expected) in [

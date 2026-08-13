@@ -102,22 +102,20 @@ impl CliOutput {
 
     /// Prints a successful result with no extra payload. Use
     /// this when the JSON envelope is just `{ok, version}`.
+    /// Test-scoped: production success sites pass a payload
+    /// (`success`) or use the resource writers' summaries.
+    #[cfg(test)]
     pub fn success_empty(self, summary: &str) {
         self.success(summary, Value::Null);
     }
 
-    /// Round 12: prints a "grammar-locked, wire-deferred" success.
-    /// Used by `set` leaves whose CLI shape is locked but whose
-    /// real writer is not yet wired. The JSON envelope is identical
-    /// to a normal success but the `summary` ends with `: planned.`
-    /// so a downstream tool can branch on it without parsing the
-    /// human message.
-    ///
-    /// Replaces the 19-site `eprintln!(... Round 12 ...)` +
-    /// `output.success_empty("...: planned.")` + `let _ = output;`
-    /// pattern in `commands::set`. After this call, the caller can
-    /// simply `return ExitCode::SUCCESS` (or use `planned_ok` to
-    /// get the exit code directly).
+    /// Prints a "grammar-locked, wire-deferred" success: the
+    /// `summary` ends with `: planned.` so a downstream tool
+    /// can branch on it without parsing the human message.
+    /// Test-scoped: no production leaf emits planned output
+    /// through this path anymore (dry-run leaves print via
+    /// their own success summaries).
+    #[cfg(test)]
     pub fn planned(self, action: &str) {
         self.success_empty(&format!("{action}: planned."));
     }

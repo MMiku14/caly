@@ -209,39 +209,39 @@ fn replay(log: &OperationLog, options: &CliOptions, target: &str) -> ExitCode {
         eprintln!("recorded operation `{}` is empty", entry.command);
         return ExitCode::FAILURE;
     }
-            // Replay is identical to the operator re-typing the command: the
-            // full parse (incl. alias expansion) and dispatch path run again,
-            // and the replayed operation is recorded once more (shell-history
-            // behaviour). `history` itself is not recordable, so this cannot
-            // recurse.
-            match crate::cli::parse_args(argv) {
-                Ok(invocation) => {
-                    // main() records before run(); replay bypasses main(), so the
-                    // record step is repeated here to keep the contract.
-                    crate::commands::history::maybe_record(
-                        &entry
-                            .command
-                            .split_whitespace()
-                            .map(String::from)
-                            .collect::<Vec<_>>(),
-                        &invocation.command,
-                    );
-                    crate::dispatch(
-                        invocation.command,
-                        invocation.options,
-                        // Recorded operations are never the host command:
-                        // `maybe_record` only logs side-effecting CLI
-                        // operations, and replay cannot (must not) start a
-                        // daemon. The placeholder closure is unreachable in
-                        // practice; it fails closed if it ever runs.
-                        |_| {
-                            eprintln!("cannot replay the daemon host command");
-                            std::process::ExitCode::FAILURE
-                        },
-                    )
-                }
-                Err(error) => crate::error::print_and_fold(&error),
-            }
+    // Replay is identical to the operator re-typing the command: the
+    // full parse (incl. alias expansion) and dispatch path run again,
+    // and the replayed operation is recorded once more (shell-history
+    // behaviour). `history` itself is not recordable, so this cannot
+    // recurse.
+    match crate::cli::parse_args(argv) {
+        Ok(invocation) => {
+            // main() records before run(); replay bypasses main(), so the
+            // record step is repeated here to keep the contract.
+            crate::commands::history::maybe_record(
+                &entry
+                    .command
+                    .split_whitespace()
+                    .map(String::from)
+                    .collect::<Vec<_>>(),
+                &invocation.command,
+            );
+            crate::dispatch(
+                invocation.command,
+                invocation.options,
+                // Recorded operations are never the host command:
+                // `maybe_record` only logs side-effecting CLI
+                // operations, and replay cannot (must not) start a
+                // daemon. The placeholder closure is unreachable in
+                // practice; it fails closed if it ever runs.
+                |_| {
+                    eprintln!("cannot replay the daemon host command");
+                    std::process::ExitCode::FAILURE
+                },
+            )
+        }
+        Err(error) => crate::error::print_and_fold(&error),
+    }
 }
 
 fn clear(log: &OperationLog, options: &CliOptions) -> ExitCode {

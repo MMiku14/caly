@@ -2,8 +2,8 @@
 
 use caly_domain::PlatformEffectView;
 use caly_platform::{
-    PlatformFailure,
     tun::{InterfaceName, LinuxTunBackend, OwnedTun, TunBackend, TunEscalation, TunRequest},
+    PlatformFailure,
 };
 use caly_ports::{ActorFailure, ActorFailureKind, TunCommandBackend};
 

@@ -1,10 +1,10 @@
 //! Linux desktop system-proxy backend (GNOME / KDE Plasma / niri).
 
 use caly_domain::{BoundedText, PlatformEffectView};
-use caly_platform::desktop::{capture_proxy_state, detect_desktop_mode, DesktopProxyMode};
 use caly_platform::command::{
     CommandArguments, CommandRequest, CommandResult, CommandRunner, LinuxCommandRunner,
 };
+use caly_platform::desktop::{capture_proxy_state, detect_desktop_mode, DesktopProxyMode};
 use caly_ports::{ActorFailure, PlatformCommandBackend};
 
 /// Linux desktop system-proxy backend using shell-free bounded commands.
@@ -195,10 +195,3 @@ pub use tun::LinuxTunCommandBackend;
 
 /// The durable platform backend used by the daemon composition.
 pub type PlatformBackend = DurableSystemProxyBackend<LinuxSystemProxyBackend>;
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-
-}

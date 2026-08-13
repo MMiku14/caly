@@ -24,7 +24,7 @@ use std::process::ExitCode;
 
 use crate::cli::{ProxyGroupMemberSpec, SetProxyGroupCmd};
 use crate::client::proxy_group as cmd;
-use crate::commands::set::common::{ResourceVerb, run_standard_writer};
+use crate::commands::set::common::{crud_dispatch, run_standard_writer, ResourceVerb};
 use crate::output::{self, CliOutput};
 
 /// The singular resource name used by
@@ -184,12 +184,14 @@ pub fn dispatch_with_paths(
             dry_run,
         } => crud_dispatch(
             output,
-            paths,
+            CLI_PREFIX,
+            NOUN,
             &name,
             apply,
             dry_run,
             ResourceVerb::Remove,
-            cmd::remove_group,
+            |apply| cmd::remove_group(paths, &name, apply),
+            code_for,
         ),
         SetProxyGroupCmd::Enable {
             name,
@@ -197,12 +199,14 @@ pub fn dispatch_with_paths(
             dry_run,
         } => crud_dispatch(
             output,
-            paths,
+            CLI_PREFIX,
+            NOUN,
             &name,
             apply,
             dry_run,
             ResourceVerb::Enable,
-            |paths, name, apply| cmd::set_enabled(paths, name, true, apply),
+            |apply| cmd::set_enabled(paths, &name, true, apply),
+            code_for,
         ),
         SetProxyGroupCmd::Disable {
             name,
@@ -210,68 +214,19 @@ pub fn dispatch_with_paths(
             dry_run,
         } => crud_dispatch(
             output,
-            paths,
+            CLI_PREFIX,
+            NOUN,
             &name,
             apply,
             dry_run,
             ResourceVerb::Disable,
-            |paths, name, apply| cmd::set_enabled(paths, name, false, apply),
+            |apply| cmd::set_enabled(paths, &name, false, apply),
+            code_for,
         ),
         SetProxyGroupCmd::List { enabled_only } => {
             list(paths, enabled_only, output, options.format)
         }
     }
-}
-
-/// Round 33: the inner dispatch helper for the 3
-/// simple-CRUD leaves (`remove` / `enable` / `disable`).
-/// Pre-Round 33 each of the 3 arms in [`dispatch_with_paths`]
-/// was a 9-line `run_standard_writer(...)` call that
-/// differed only in the `ResourceVerb` variant and the
-/// `cmd::*` writer function. The 3 arms are now collapsed
-/// into a single helper: the verb + the writer closure
-/// are the only per-call data, the leaf string / envelope
-/// / summary / classify / payload are all folded into
-/// `run_standard_writer`. Mirrors the
-/// `commands::set::sub::crud_dispatch` helper (Round 30)
-/// and `commands::rule_provider::crud_dispatch` (Round 30)
-/// — all three resources now share the same inner dispatch
-/// shape, just with their own writer closure type.
-///
-/// `W` is the writer closure type; the
-/// `Fn(&AppPaths, &str, bool) -> Result<PgWriteOutcome, PgWriteError>`
-/// signature matches the 3 `cmd::*` functions exactly.
-fn crud_dispatch<W>(
-    output: CliOutput,
-    paths: &caly_platform::paths::AppPaths,
-    name: &str,
-    apply: bool,
-    dry_run: bool,
-    verb: ResourceVerb,
-    writer: W,
-) -> ExitCode
-where
-    W: FnOnce(
-        &caly_platform::paths::AppPaths,
-        &str,
-        bool,
-    ) -> Result<cmd::PgWriteOutcome, cmd::PgWriteError>,
-{
-    // `--apply` and `--dry-run` are mutually
-    // exclusive (clap enforces it). `apply: true`
-    // writes, `dry_run: true` runs every check +
-    // reports planned, both `false` (default) is the
-    // safe dry-run path.
-    let effective_apply = apply && !dry_run;
-    run_standard_writer(
-        output,
-        CLI_PREFIX,
-        NOUN,
-        verb,
-        name,
-        || writer(paths, name, effective_apply),
-        code_for,
-    )
 }
 
 /// Maps the CLI [`ProxyGroupMemberSpec`] to the writer's

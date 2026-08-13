@@ -171,7 +171,6 @@ dependencies = [
  "caly-subscription",
  "caly-template",
  "serde_json",
- "sha2",
  "tokio",
  "tracing",
  "url",

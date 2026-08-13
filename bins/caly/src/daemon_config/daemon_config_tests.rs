@@ -48,10 +48,8 @@ fn non_loopback_listen_fails_closed() {
     assert!(
         matches!(
             listen_from(root.clone()),
-            Err(
-                caly_cli::config::DaemonConfigError::RemoteListenUnavailable
-                    | caly_cli::config::DaemonConfigError::Layered(_)
-            )
+            Err(caly_cli::config::DaemonConfigError::RemoteListenUnavailable
+                | caly_cli::config::DaemonConfigError::Layered(_))
         ),
         "remote listen with incomplete TLS material must fail closed"
     );

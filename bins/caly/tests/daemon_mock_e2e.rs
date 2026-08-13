@@ -56,9 +56,23 @@ fn e2e_lock() -> E2eLockGuard {
                         .is_ok_and(|status| status.success())
                 });
                 if !holder_alive {
-                    // The previous holder died (crash / CI kill); take over.
-                    let _ = std::fs::remove_dir_all(&path);
-                    continue;
+                    // A missing/unparseable pid does NOT mean the holder is
+                    // dead: an acquirer creates the dir and only then writes
+                    // the pid file, so a waiter polling inside that window
+                    // would steal the lock from a LIVE holder and two suites
+                    // would run concurrently. Only take over a dir whose pid
+                    // is missing AND whose mtime is older than a few seconds
+                    // (holder died inside the create -> write window).
+                    let stale = std::fs::metadata(&path)
+                        .and_then(|meta| meta.modified())
+                        .ok()
+                        .and_then(|modified| modified.elapsed().ok())
+                        .is_some_and(|age| age > Duration::from_secs(5));
+                    if stale {
+                        // The previous holder died (crash / CI kill); take over.
+                        let _ = std::fs::remove_dir_all(&path);
+                        continue;
+                    }
                 }
                 if Instant::now() > deadline {
                     panic!("timed out waiting for the e2e suite lock");
@@ -131,36 +145,7 @@ fn mock_daemon_lifecycle_for_sing_box() -> Result<(), String> {
 #[test]
 fn node_select_without_argument_never_blocks_non_tty() -> Result<(), String> {
     let _guard = e2e_lock();
-    let controller_port = alloc_port()?;
-    let runtime = unique_runtime("mock-non-tty-select");
-    fs::create_dir_all(&runtime).map_err(|error| error.to_string())?;
-    let lock = runtime.join("caly.lock");
-    let workdir = runtime.join("caly").join("cores").join("mihomo");
-    fs::create_dir_all(&workdir).map_err(|error| error.to_string())?;
-    let log_handle = fs::File::create(runtime.join("daemon.log")).map_err(|e| e.to_string())?;
-    let mut command = Command::new(caly_binary());
-    command
-        .arg("daemon")
-        .env("CALY_CORE", "mihomo")
-        .env("CALY_LOCK", &lock)
-        .env("CALY_MIHOMO_DIR", &workdir)
-        .env("CALY_MIHOMO_BIN", mock_binary())
-        .env(
-            "CALY_MIHOMO_CONTROLLER",
-            format!("127.0.0.1:{controller_port}"),
-        )
-        .env("XDG_RUNTIME_DIR", &runtime)
-        .env("XDG_STATE_HOME", runtime.join("state"))
-        .env("XDG_CONFIG_HOME", runtime.join("config"))
-        .env("HOME", &runtime)
-        .stdout(log_handle.try_clone().map_err(|e| e.to_string())?)
-        .stderr(log_handle);
-    let daemon = DaemonGuard {
-        child: command.spawn().map_err(|error| error.to_string())?,
-        runtime: runtime.clone(),
-    };
-    wait_for_socket(&socket_path(&runtime), START_TIMEOUT)?;
-    wait_for_port(controller_port, START_TIMEOUT)?;
+    let (daemon, runtime) = start_mock_daemon("mock-non-tty-select", |_| Ok(()))?;
 
     let output = Command::new(caly_binary())
         .args(["node", "select"])
@@ -192,7 +177,28 @@ fn node_select_without_argument_never_blocks_non_tty() -> Result<(), String> {
 /// with the one difference that the managed core is the mock binary, so the
 /// test proves out-of-the-box coverage instead of skipping.
 fn run_mock_core(core: &str) -> Result<(), String> {
-    let controller_port = alloc_port()?;
+    // `alloc_port` binds-and-releases; retry the whole lifecycle on a fresh
+    // port when the controller never became ready OR a stray kernel answered
+    // the banner probe (port contention in both cases — never a product
+    // failure). Bounded to 3 attempts.
+    for attempt in 1..=3 {
+        let controller_port = alloc_port()?;
+        match run_mock_core_once(core, controller_port) {
+            Ok(()) => return Ok(()),
+            Err(error)
+                if attempt < 3
+                    && (error.contains("did not become ready")
+                        || error.contains("answered by an unexpected implementation")) =>
+            {
+                eprintln!("port {controller_port} contested (attempt {attempt}/3); retrying");
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    unreachable!("loop always returns")
+}
+
+fn run_mock_core_once(core: &str, controller_port: u16) -> Result<(), String> {
     let runtime = unique_runtime(&format!("mock-{core}"));
     fs::create_dir_all(&runtime).map_err(|error| error.to_string())?;
     let lock = runtime.join("caly.lock");
@@ -286,6 +292,8 @@ fn mock_kernel_serves_the_advertised_contract() -> Result<(), String> {
     fs::create_dir_all(&root).map_err(|error| error.to_string())?;
     let port = alloc_port()?;
     let yaml = root.join("mihomo.yaml");
+    let json = root.join("sing-box.json");
+    // Validation modes never bind, so they run once against the first port.
     fs::write(
         &yaml,
         format!("mixed-port: 7890\nexternal-controller: 127.0.0.1:{port}\nsecret: mock\n"),
@@ -300,7 +308,6 @@ fn mock_kernel_serves_the_advertised_contract() -> Result<(), String> {
     if !validate.status.success() {
         return Err("mock kernel rejected the Mihomo -t validation mode".to_owned());
     }
-    let json = root.join("sing-box.json");
     fs::write(
         &json,
         format!("{{\"experimental\":{{\"clash_api\":{{\"external_controller\":\"127.0.0.1:{port}\"}}}}}}"),
@@ -315,24 +322,53 @@ fn mock_kernel_serves_the_advertised_contract() -> Result<(), String> {
     if !check.status.success() {
         return Err("mock kernel rejected the sing-box check mode".to_owned());
     }
-    let mut serve = Command::new(mock_binary())
-        .args(["-d", ".", "-f"])
-        .arg(&yaml)
-        .spawn()
-        .map_err(|error| error.to_string())?;
-    let outcome = wait_for_port(port, START_TIMEOUT)
-        .and_then(|()| http_get(port, "/version"))
-        .and_then(|body| {
-            if body.contains("caly-mock-kernel") {
-                Ok(())
-            } else {
-                Err(format!("unexpected /version body: {body}"))
-            }
-        });
-    let _ = serve.kill();
-    let _ = serve.wait();
+    let outcome = serve_with_retry(&yaml, &json);
     fs::remove_dir_all(&root).map_err(|error| error.to_string())?;
     outcome
+}
+
+/// Serve phase of the mock selftest: spawn the mock against a fresh
+/// ephemeral port per attempt, killing the previous serve before
+/// re-spawning. `alloc_port` binds-and-releases, so a contested port shows
+/// up as a readiness timeout; retry only that condition.
+fn serve_with_retry(yaml: &Path, json: &Path) -> Result<(), String> {
+    for attempt in 1..=3 {
+        let port = alloc_port()?;
+        fs::write(
+            yaml,
+            format!("mixed-port: 7890\nexternal-controller: 127.0.0.1:{port}\nsecret: mock\n"),
+        )
+        .map_err(|error| error.to_string())?;
+        fs::write(
+            json,
+            format!("{{\"experimental\":{{\"clash_api\":{{\"external_controller\":\"127.0.0.1:{port}\"}}}}}}"),
+        )
+        .map_err(|error| error.to_string())?;
+        let mut serve = Command::new(mock_binary())
+            .args(["-d", ".", "-f"])
+            .arg(yaml)
+            .spawn()
+            .map_err(|error| error.to_string())?;
+        let attempt_outcome = wait_for_port(port, START_TIMEOUT)
+            .and_then(|()| http_get(port, "/version"))
+            .and_then(|body| {
+                if body.contains("caly-mock-kernel") {
+                    Ok(())
+                } else {
+                    Err(format!("unexpected /version body: {body}"))
+                }
+            });
+        let _ = serve.kill();
+        let _ = serve.wait();
+        match attempt_outcome {
+            Ok(()) => return Ok(()),
+            Err(error) if attempt < 3 && error.contains("did not become ready") => {
+                eprintln!("port {port} contested (attempt {attempt}/3); retrying");
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    unreachable!("loop always returns")
 }
 
 /// One raw HTTP GET against the mocked controller, returning the body.
@@ -482,24 +518,43 @@ fn mock_binary() -> &'static str {
     env!("CARGO_BIN_EXE_caly_mock_kernel")
 }
 
-/// W4 (cli-v3-design.md §12): the `node pick` / group `node test`
-/// contract against a mock daemon. A declared config with one selector
-/// group and one url-test group drives the offline type checks:
-/// - omitted member on a non-TTY is a usage error (exit 2), never a hang;
-/// - picking an auto-managed group is a type misuse (exit 2);
-/// - a member outside the group is a validation failure (exit 1);
-/// - dry-run is the default (exit 0 preview), `--apply` commits through
-///   the daemon to the mock kernel's `PUT /proxies/{group}`.
-#[test]
-fn node_pick_and_group_test_contract() -> Result<(), String> {
-    let _guard = e2e_lock();
-    let controller_port = alloc_port()?;
-    let runtime = unique_runtime("mock-w4-pick");
+/// Spawn the mock-backed daemon for the W2/W4 wire tests. Mirrors
+/// `run_core`'s retry: `alloc_port` binds-and-releases, so another process
+/// can grab the port before the daemon's mock kernel binds it. Retry the
+/// whole launch on a fresh port, but ONLY on a readiness failure
+/// (contention), never to mask a real regression. `pre_start` runs inside
+/// each attempt so the daemon sees attempt-local config.
+fn start_mock_daemon(
+    runtime_name: &str,
+    pre_start: impl Fn(&Path) -> Result<(), String>,
+) -> Result<(DaemonGuard, PathBuf), String> {
+    for attempt in 1..=3 {
+        let port = alloc_port()?;
+        match start_mock_daemon_once(runtime_name, &pre_start, port) {
+            Ok(daemon) => {
+                let runtime = daemon.runtime.clone();
+                return Ok((daemon, runtime));
+            }
+            Err(error) if attempt < 3 && error.contains("did not become ready") => {
+                eprintln!("port {port} contested (attempt {attempt}/3); retrying");
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    unreachable!("loop always returns")
+}
+
+fn start_mock_daemon_once(
+    runtime_name: &str,
+    pre_start: &impl Fn(&Path) -> Result<(), String>,
+    controller_port: u16,
+) -> Result<DaemonGuard, String> {
+    let runtime = unique_runtime(runtime_name);
     fs::create_dir_all(&runtime).map_err(|error| error.to_string())?;
     let lock = runtime.join("caly.lock");
     let workdir = runtime.join("caly").join("cores").join("mihomo");
     fs::create_dir_all(&workdir).map_err(|error| error.to_string())?;
-    w4_config(&runtime)?;
+    pre_start(&runtime)?;
     let log_handle = fs::File::create(runtime.join("daemon.log")).map_err(|e| e.to_string())?;
     let mut command = Command::new(caly_binary());
     command
@@ -523,7 +578,25 @@ fn node_pick_and_group_test_contract() -> Result<(), String> {
         runtime: runtime.clone(),
     };
     wait_for_socket(&socket_path(&runtime), START_TIMEOUT)?;
-    wait_for_port(controller_port, START_TIMEOUT)?;
+    wait_for_port(controller_port, START_TIMEOUT).map_err(|error| {
+        let log = fs::read_to_string(runtime.join("daemon.log")).unwrap_or_default();
+        format!("{error}\ndaemon log:\n{log}")
+    })?;
+    Ok(daemon)
+}
+
+/// W4 (cli-v3-design.md §12): the `node pick` / group `node test`
+/// contract against a mock daemon. A declared config with one selector
+/// group and one url-test group drives the offline type checks:
+/// - omitted member on a non-TTY is a usage error (exit 2), never a hang;
+/// - picking an auto-managed group is a type misuse (exit 2);
+/// - a member outside the group is a validation failure (exit 1);
+/// - dry-run is the default (exit 0 preview), `--apply` commits through
+///   the daemon to the mock kernel's `PUT /proxies/{group}`.
+#[test]
+fn node_pick_and_group_test_contract() -> Result<(), String> {
+    let _guard = e2e_lock();
+    let (daemon, runtime) = start_mock_daemon("mock-w4-pick", w4_config)?;
 
     let selector = "selector-main"; // 节点选择
     let auto = "auto-test"; // 自动选择

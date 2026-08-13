@@ -9,9 +9,9 @@
 use std::{net::SocketAddr, path::PathBuf};
 
 use caly_composition::RuntimeTuning;
-use caly_platform::paths::CoreBinaryPaths;
 use caly_dns::DnsSettings;
 use caly_domain::{Controllers, CoreKind, TunConfig};
+use caly_platform::paths::CoreBinaryPaths;
 use caly_profile::schema::AppConfig;
 use caly_server::tcp::TlsMaterialPaths;
 
@@ -51,7 +51,9 @@ pub(crate) struct DaemonSettings {
 
 /// Resolves all boot settings from one layered config load; an invalid config
 /// fails the whole boot.
-pub(crate) fn resolve_daemon(root: PathBuf) -> Result<DaemonSettings, caly_cli::config::DaemonConfigError> {
+pub(crate) fn resolve_daemon(
+    root: PathBuf,
+) -> Result<DaemonSettings, caly_cli::config::DaemonConfigError> {
     let config = caly_cli::config::load_from(root)?;
     let kernel = caly_cli::config::kernel_from_config(config.as_ref());
     let (system_proxy_host, system_proxy_port) =
@@ -100,7 +102,9 @@ pub(crate) fn resolve_daemon(root: PathBuf) -> Result<DaemonSettings, caly_cli::
 /// protections are fully configured (TLS material plus an auth token);
 /// see `listen_from_config` for the reconciled gate (#17/#57/#58).
 #[cfg(test)]
-pub fn listen_from(root: PathBuf) -> Result<Option<SocketAddr>, caly_cli::config::DaemonConfigError> {
+pub fn listen_from(
+    root: PathBuf,
+) -> Result<Option<SocketAddr>, caly_cli::config::DaemonConfigError> {
     listen_from_config(caly_cli::config::load_from(root)?.as_ref())
 }
 

@@ -43,10 +43,11 @@ pub(crate) fn apply_kde_proxy<R: CommandRunner>(
     reload_kio(runner)
 }
 
+/// Restores a previously captured KDE proxy state.
 ///
-/// KDE `ProxyType` values: 0 = no proxy, 1 = manual, 2 = automatic (PAC).
-/// The endpoint is the `httpProxy` URL with its scheme stripped, and is only
-/// meaningful for manual mode. Unreadable state degrades to `("none", "")`.
+/// `manual` writes `ProxyType=1` and the endpoint across the four proxy
+/// keys; `auto` writes `ProxyType=2`; `unknown` is a no-op (Audit #114);
+/// anything else writes `ProxyType=0`. KIO is reloaded afterwards.
 pub(crate) fn restore<R: CommandRunner>(
     runner: &mut R,
     mode: &str,
@@ -103,9 +104,6 @@ fn write_key<R: CommandRunner>(
     super::run_ok(runner, request).map(|_| ())
 }
 
-
-
-/// Reads one `kioslaverc` key; missing keys and failures yield `None`.
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -133,31 +131,6 @@ mod tests {
             Ok(CommandResult {
                 exit_code: Some(0),
                 stdout: BoundedVec::new(),
-                stderr: BoundedVec::new(),
-            })
-        }
-    }
-
-    /// Runner returning scripted stdout values in order (exit code zero).
-    struct ScriptedRunner {
-        /// Per-command scripted output; the parallel `exit_codes` queue is
-        /// consumed per call so individual reads can fail independently
-        /// (defaults to `Some(0)` when exhausted).
-        outputs: std::collections::VecDeque<&'static str>,
-        exit_codes: std::collections::VecDeque<Option<i32>>,
-    }
-    impl CommandRunner for ScriptedRunner {
-        fn run_bounded(
-            &mut self,
-            _request: CommandRequest,
-        ) -> Result<CommandResult, caly_platform::PlatformFailure> {
-            let text = self.outputs.pop_front().unwrap_or_default();
-            let exit_code = self.exit_codes.pop_front().unwrap_or(Some(0));
-            let mut stdout = BoundedVec::new();
-            let _ = stdout.try_extend(text.as_bytes().to_vec());
-            Ok(CommandResult {
-                exit_code,
-                stdout,
                 stderr: BoundedVec::new(),
             })
         }
@@ -200,18 +173,6 @@ mod tests {
         assert!(!joined.contains("httpProxy"));
         Ok(())
     }
-
-    #[test]
-
-
-    #[test]
-
-
-    #[test]
-
-
-    #[test]
-
 
     #[test]
     fn restore_manual_writes_endpoint_and_reloads() -> Result<(), ActorFailure> {

@@ -63,8 +63,27 @@ fn e2e_lock() -> E2eLockGuard {
                         .is_ok_and(|status| status.success())
                 });
                 if !holder_alive {
-                    let _ = std::fs::remove_dir_all(&path);
-                    continue;
+                    // A missing/unparseable pid does NOT mean the holder is
+                    // dead: an acquirer creates the dir and only then writes
+                    // the pid file, so a waiter polling inside that window
+                    // would steal the lock from a LIVE holder — two suites
+                    // then run concurrently (observed in the wild: two
+                    // daemons racing for the fixed mixed-port 7890, and the
+                    // restart test's pkill terminating the lifecycle test's
+                    // daemon mid-phase). Only take over a dir whose pid is
+                    // missing AND whose mtime is older than a few seconds
+                    // (holder died inside the create -> write window). A
+                    // live holder's window is microseconds, so it resolves
+                    // on the next poll.
+                    let stale = std::fs::metadata(&path)
+                        .and_then(|meta| meta.modified())
+                        .ok()
+                        .and_then(|modified| modified.elapsed().ok())
+                        .is_some_and(|age| age > std::time::Duration::from_secs(5));
+                    if stale {
+                        let _ = std::fs::remove_dir_all(&path);
+                        continue;
+                    }
                 }
                 if Instant::now() > deadline {
                     panic!("timed out waiting for the e2e suite lock");
@@ -371,6 +390,70 @@ fn require_real_e2e() -> bool {
     std::env::var("CALY_REQUIRE_REAL_E2E").as_deref() == Ok("1")
 }
 
+/// Spawn the real daemon (mihomo core) for the `set daemon *` wire tests.
+/// Mirrors `run_core`'s retry: `alloc_port` binds-and-releases, so another
+/// process can grab the port before the daemon's kernel binds it. Retry the
+/// whole launch on a fresh port, but ONLY when the controller did not become
+/// ready (contention), never to mask a real failure.
+fn start_daemon_for_wire_tests(
+    runtime_suffix: &str,
+    mihomo: &Path,
+) -> Result<(DaemonGuard, PathBuf), String> {
+    for attempt in 1..=3 {
+        let port = alloc_port()?;
+        match start_daemon_once(runtime_suffix, mihomo, port) {
+            Ok(daemon) => {
+                let runtime = daemon.runtime.clone();
+                return Ok((daemon, runtime));
+            }
+            Err(error) if attempt < 3 && error.contains("did not become ready") => {
+                eprintln!("port {port} contested (attempt {attempt}/3); retrying");
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    unreachable!("loop always returns")
+}
+
+fn start_daemon_once(
+    runtime_suffix: &str,
+    mihomo: &Path,
+    controller_port: u16,
+) -> Result<DaemonGuard, String> {
+    let runtime = unique_runtime(runtime_suffix);
+    fs::create_dir_all(&runtime).map_err(|error| error.to_string())?;
+    let socket = socket_path(&runtime);
+    let lock = runtime.join("caly.lock");
+    let workdir = runtime.join("caly/cores/mihomo");
+    fs::create_dir_all(&workdir).map_err(|error| error.to_string())?;
+    let log = runtime.join("daemon.log");
+    let log_handle = fs::File::create(&log).map_err(|error| error.to_string())?;
+    let mut daemon_cmd = Command::new(caly_binary());
+    daemon_cmd
+        .arg("daemon")
+        .env("CALY_CORE", "mihomo")
+        .env("CALY_LOCK", &lock)
+        .env("CALY_MIHOMO_DIR", &workdir)
+        .env("XDG_RUNTIME_DIR", &runtime)
+        .env("XDG_STATE_HOME", runtime.join("state"))
+        .env("XDG_CONFIG_HOME", runtime.join("config"))
+        .env("HOME", &runtime)
+        .env("CALY_MIHOMO_BIN", mihomo)
+        .env("CALY_MIHOMO_CONTROLLER", format!("127.0.0.1:{controller_port}"))
+        .stdout(log_handle.try_clone().map_err(|error| error.to_string())?)
+        .stderr(log_handle);
+    let daemon = DaemonGuard {
+        child: daemon_cmd.spawn().map_err(|error| error.to_string())?,
+        runtime: runtime.clone(),
+    };
+    wait_for_socket(&socket, START_TIMEOUT)?;
+    wait_for_port(controller_port, START_TIMEOUT).map_err(|error| {
+        let log = fs::read_to_string(runtime.join("daemon.log")).unwrap_or_default();
+        format!("{error}\ndaemon log:\n{log}")
+    })?;
+    Ok(daemon)
+}
+
 /// Round 17: `set daemon stop` is a real wire command
 /// (`WireCommand::StopDaemon`). The server tears down
 /// the runtime after serializing the response. The
@@ -395,35 +478,9 @@ fn set_daemon_stop_exits_daemon_and_cleans_up() -> Result<(), String> {
         eprintln!("skipping: pinned Mihomo binary is unavailable");
         return Ok(());
     }
-    let port = alloc_port()?;
-    let runtime = unique_runtime("daemon-stop");
-    fs::create_dir_all(&runtime).map_err(|error| error.to_string())?;
+    let (mut daemon, runtime) = start_daemon_for_wire_tests("daemon-stop", &mihomo)?;
     let socket = socket_path(&runtime);
     let lock = runtime.join("caly.lock");
-    let workdir = runtime.join("caly/cores/mihomo");
-    fs::create_dir_all(&workdir).map_err(|error| error.to_string())?;
-    let log = runtime.join("daemon.log");
-    let log_handle = fs::File::create(&log).map_err(|error| error.to_string())?;
-    let mut daemon_cmd = Command::new(caly_binary());
-    daemon_cmd
-        .arg("daemon")
-        .env("CALY_CORE", "mihomo")
-        .env("CALY_LOCK", &lock)
-        .env("CALY_MIHOMO_DIR", &workdir)
-        .env("XDG_RUNTIME_DIR", &runtime)
-        .env("XDG_STATE_HOME", runtime.join("state"))
-        .env("XDG_CONFIG_HOME", runtime.join("config"))
-        .env("HOME", &runtime)
-        .env("CALY_MIHOMO_BIN", &mihomo)
-        .env("CALY_MIHOMO_CONTROLLER", format!("127.0.0.1:{port}"))
-        .stdout(log_handle.try_clone().map_err(|error| error.to_string())?)
-        .stderr(log_handle);
-    let mut daemon = DaemonGuard {
-        child: daemon_cmd.spawn().map_err(|error| error.to_string())?,
-        runtime: runtime.clone(),
-    };
-    wait_for_socket(&socket, START_TIMEOUT)?;
-    wait_for_port(port, START_TIMEOUT)?;
 
     // Sanity: `show status` works.
     let _ = client("mihomo", &runtime, &["show", "status", "--json"])?;
@@ -476,36 +533,7 @@ fn set_daemon_reload_returns_completed_and_keeps_daemon_up() -> Result<(), Strin
         eprintln!("skipping: pinned Mihomo binary is unavailable");
         return Ok(());
     }
-    let port = alloc_port()?;
-    let runtime = unique_runtime("daemon-reload");
-    fs::create_dir_all(&runtime).map_err(|error| error.to_string())?;
-    let socket = socket_path(&runtime);
-    let lock = runtime.join("caly.lock");
-    let workdir = runtime.join("caly/cores/mihomo");
-    fs::create_dir_all(&workdir).map_err(|error| error.to_string())?;
-    let log = runtime.join("daemon.log");
-    let log_handle = fs::File::create(&log).map_err(|error| error.to_string())?;
-    let mut daemon_cmd = Command::new(caly_binary());
-    daemon_cmd
-        .arg("daemon")
-        .env("CALY_CORE", "mihomo")
-        .env("CALY_LOCK", &lock)
-        .env("CALY_MIHOMO_DIR", &workdir)
-        .env("XDG_RUNTIME_DIR", &runtime)
-        .env("XDG_STATE_HOME", runtime.join("state"))
-        .env("XDG_CONFIG_HOME", runtime.join("config"))
-        .env("HOME", &runtime)
-        .env("CALY_MIHOMO_BIN", &mihomo)
-        .env("CALY_MIHOMO_CONTROLLER", format!("127.0.0.1:{port}"))
-        .stdout(log_handle.try_clone().map_err(|error| error.to_string())?)
-        .stderr(log_handle);
-    let mut daemon = DaemonGuard {
-        child: daemon_cmd.spawn().map_err(|error| error.to_string())?,
-        runtime: runtime.clone(),
-    };
-    wait_for_socket(&socket, START_TIMEOUT)?;
-    wait_for_port(port, START_TIMEOUT)?;
-
+    let (mut daemon, runtime) = start_daemon_for_wire_tests("daemon-reload", &mihomo)?;
     let _ = client("mihomo", &runtime, &["show", "status", "--json"])?;
 
     // Round 17: `set daemon reload` is a real wire command.
@@ -571,35 +599,7 @@ fn set_daemon_restart_reports_spawned_pid_and_exits_old_daemon() -> Result<(), S
         eprintln!("skipping: pinned Mihomo binary is unavailable");
         return Ok(());
     }
-    let port = alloc_port()?;
-    let runtime = unique_runtime("daemon-restart");
-    fs::create_dir_all(&runtime).map_err(|error| error.to_string())?;
-    let socket = socket_path(&runtime);
-    let lock = runtime.join("caly.lock");
-    let workdir = runtime.join("caly/cores/mihomo");
-    fs::create_dir_all(&workdir).map_err(|error| error.to_string())?;
-    let log = runtime.join("daemon.log");
-    let log_handle = fs::File::create(&log).map_err(|error| error.to_string())?;
-    let mut daemon_cmd = Command::new(caly_binary());
-    daemon_cmd
-        .arg("daemon")
-        .env("CALY_CORE", "mihomo")
-        .env("CALY_LOCK", &lock)
-        .env("CALY_MIHOMO_DIR", &workdir)
-        .env("XDG_RUNTIME_DIR", &runtime)
-        .env("XDG_STATE_HOME", runtime.join("state"))
-        .env("XDG_CONFIG_HOME", runtime.join("config"))
-        .env("HOME", &runtime)
-        .env("CALY_MIHOMO_BIN", &mihomo)
-        .env("CALY_MIHOMO_CONTROLLER", format!("127.0.0.1:{port}"))
-        .stdout(log_handle.try_clone().map_err(|error| error.to_string())?)
-        .stderr(log_handle);
-    let mut daemon = DaemonGuard {
-        child: daemon_cmd.spawn().map_err(|error| error.to_string())?,
-        runtime: runtime.clone(),
-    };
-    wait_for_socket(&socket, START_TIMEOUT)?;
-    wait_for_port(port, START_TIMEOUT)?;
+    let (mut daemon, runtime) = start_daemon_for_wire_tests("daemon-restart", &mihomo)?;
     let _ = client("mihomo", &runtime, &["show", "status", "--json"])?;
 
     // Round 17: `set daemon restart` is a client-side

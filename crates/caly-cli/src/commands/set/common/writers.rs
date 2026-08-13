@@ -10,8 +10,8 @@
 use std::process::ExitCode;
 
 use super::{
-    OutcomeKind, ResourceVerb, Summaries, WriteEnvelope, classify_resource_outcome,
-    no_extra_payload,
+    classify_resource_outcome, no_extra_payload, OutcomeKind, ResourceVerb, Summaries,
+    WriteEnvelope,
 };
 use crate::output::{self, CliOutput};
 
@@ -254,5 +254,61 @@ where
         classify_resource_outcome,
         code_for,
         no_extra_payload,
+    )
+}
+
+/// Shared CRUD leaf dispatch for `set RESOURCE VERB`.
+///
+/// Collapsed from three per-resource copies
+/// (`commands::proxy_group`, `commands::rule_provider`,
+/// `commands::set::sub`): the copies differed only in the
+/// `ResourceVerb` variant, the writer closure and the
+/// error-mapping fn; the leaf string / envelope /
+/// summary / classify / payload are all folded into
+/// [`run_standard_writer`]. The `add` leaves stay bespoke
+/// where the writer needs extra arguments (e.g.
+/// `add_provider`'s `&source` / behavior projection).
+///
+/// `--apply` and `--dry-run` are mutually exclusive
+/// (clap enforces it). `apply: true` writes,
+/// `dry_run: true` runs every check + reports planned,
+/// both `false` (default) is the safe dry-run path.
+///
+/// `W` is the writer closure type; the
+/// `Fn(bool) -> Result<ResourceWriteOutcome, E>` shape
+/// matches the per-resource `cmd::*` functions once
+/// `paths` / `name` are bound at the call site. `C`
+/// maps the resource's error type to the human hint.
+#[allow(clippy::too_many_arguments)]
+pub fn crud_dispatch<W, E, C>(
+    output: CliOutput,
+    cli_prefix: &'static str,
+    noun: &'static str,
+    name: &str,
+    apply: bool,
+    dry_run: bool,
+    verb: ResourceVerb,
+    writer: W,
+    code_for: C,
+) -> ExitCode
+where
+    W: FnOnce(bool) -> Result<crate::client::resource_writer::ResourceWriteOutcome, E>,
+    C: Fn(&E) -> &'static str,
+    E: crate::output::ErrorHint + core::fmt::Display,
+{
+    // `--apply` and `--dry-run` are mutually
+    // exclusive (clap enforces it). `apply: true`
+    // writes, `dry_run: true` runs every check +
+    // reports planned, both `false` (default) is the
+    // safe dry-run path.
+    let effective_apply = apply && !dry_run;
+    run_standard_writer(
+        output,
+        cli_prefix,
+        noun,
+        verb,
+        name,
+        || writer(effective_apply),
+        code_for,
     )
 }

@@ -4,9 +4,9 @@
 
 use caly_domain::SubscriptionId;
 use caly_ports::ActorFailure;
-use caly_subscription::{FetchResult, FetchValidators, SubscriptionDocument, decode_document};
+use caly_subscription::{decode_document, FetchResult, FetchValidators, SubscriptionDocument};
 
-use super::{FETCH_ATTEMPTS, FETCH_RETRY_MILLIS, HttpSubscriptionBackend, resolve_addresses};
+use super::{resolve_addresses, HttpSubscriptionBackend, FETCH_ATTEMPTS, FETCH_RETRY_MILLIS};
 
 /// Maximum child subscriptions expanded from one URL-list document.
 const MAX_URL_LIST_CHILDREN: usize = 32;

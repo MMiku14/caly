@@ -137,7 +137,7 @@ mod tests {
     use super::*;
 
     fn unique_file(label: &str) -> std::path::PathBuf {
-        std::env::temp_dir().join(format!("caly-user-alias-{label}-{}", std::process::id()))
+        crate::test_helpers::unique_file("user-alias", label)
     }
 
     fn write_and_load(label: &str, body: &str) -> Vec<UserRule> {

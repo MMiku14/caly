@@ -78,8 +78,8 @@ pub fn run(options: caly_cli::cli::CliOptions) -> ExitCode {
     crate::daemon::finish_daemon(result.and(shutdown_error), lock, &socket, first_fault)
 }
 
-fn resolve_daemon_config()
--> Result<crate::daemon_config::DaemonSettings, caly_cli::config::DaemonConfigError> {
+fn resolve_daemon_config(
+) -> Result<crate::daemon_config::DaemonSettings, caly_cli::config::DaemonConfigError> {
     crate::daemon_config::resolve_daemon(caly_platform::paths::AppPaths::from_env().config)
 }
 

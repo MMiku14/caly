@@ -6,10 +6,10 @@ use std::sync::Arc;
 
 use caly_domain::PlatformEffectView;
 use caly_platform::{
-    PlatformFailure,
     recovery::{
-        RecoveryPhase, TunRecoveryAction, TunRecoveryRecord, TunRecoveryStore, tun_restore_first,
+        tun_restore_first, RecoveryPhase, TunRecoveryAction, TunRecoveryRecord, TunRecoveryStore,
     },
+    PlatformFailure,
 };
 use caly_ports::{ActorFailure, TunCommandBackend};
 

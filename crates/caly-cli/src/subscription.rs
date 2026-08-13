@@ -421,7 +421,7 @@ mod tests {
     use super::*;
 
     fn unique_file(label: &str) -> std::path::PathBuf {
-        std::env::temp_dir().join(format!("caly-sub-{label}-{}", std::process::id()))
+        crate::test_helpers::unique_file("sub", label)
     }
 
     fn write_then_inspect(label: &str, body: &str) -> Result<SubscriptionSummary, String> {

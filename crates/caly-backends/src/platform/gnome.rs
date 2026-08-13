@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 
 use caly_platform::command::{CommandRequest, CommandResult, CommandRunner};
+use caly_platform::desktop::split_endpoint_parts;
 
 use caly_ports::ActorFailure;
 
@@ -74,21 +75,13 @@ pub(crate) fn apply_pac<R: CommandRunner>(runner: &mut R, url: &str) -> Result<(
     Ok(())
 }
 
-/// Captures the current GNOME proxy state as `(mode, endpoint)`.
-///
-/// The endpoint is only meaningful for `manual` mode and is rendered as
-/// `host:port`; for `auto` mode the endpoint holds the PAC URL. Any
-/// unreadable component degrades to an empty endpoint rather than failing
-/// the capture.
-///
-/// Audit #114 (ported from the KDE backend): an unreadable *mode* yields
-/// `("unknown", "")`, never `none` — the pre-fix shape let a transient
-/// gsettings failure silently erase the recorded proxy state, and the
-/// subsequent restore then actively disabled a proxy we never observed.
 /// Restores a previously captured GNOME proxy state.
 ///
 /// `manual` without a usable endpoint degrades to disabling the proxy: an
 /// unknown manual endpoint must not be replaced with a guess.
+///
+/// Audit #114: `unknown` restores are a no-op — a capture failure must not
+/// silently disable a proxy we never observed.
 pub(crate) fn restore<R: CommandRunner>(
     runner: &mut R,
     mode: &str,
@@ -138,58 +131,14 @@ fn split_endpoint(endpoint: &str) -> (&str, &str) {
     (host, port.unwrap_or("0"))
 }
 
-/// Bracket-aware endpoint splitter (#94):
-/// - `[v6]:port` → (`v6`, Some(`port`)) — gsettings wants the bare address;
-/// - `[v6]` / bare `v6` → (`v6`, None) — a bare IPv6 literal carries no port;
-/// - `host:port` / bare host → the classic split (IPv4 or hostname).
-fn split_endpoint_parts(endpoint: &str) -> (&str, Option<&str>) {
-    if let Some(rest) = endpoint.strip_prefix('[')
-        && let Some(close) = rest.find(']')
-    {
-        let host = &rest[..close];
-        let tail = &rest[close + 1..];
-        return (host, tail.strip_prefix(':'));
-    }
-    // More than one colon means a bare IPv6 literal without brackets.
-    if endpoint.matches(':').count() > 1 {
-        return (endpoint, None);
-    }
-    match endpoint.rfind(':') {
-        Some(index) if index > 0 => ((&endpoint[..index]), Some(&endpoint[index + 1..])),
-        _ => (endpoint, None),
-    }
-}
-
-/// Decodes the bounded stdout bytes of a command result as UTF-8.
 #[cfg(test)]
 mod tests {
     use super::*;
     use caly_domain::BoundedVec;
 
-    /// Runner returning scripted stdout values in order (exit code zero).
-    pub(crate) struct ScriptedRunner {
-        pub(crate) outputs: std::collections::VecDeque<&'static str>,
-    }
-
-    impl CommandRunner for ScriptedRunner {
-        fn run_bounded(
-            &mut self,
-            _request: CommandRequest,
-        ) -> Result<CommandResult, caly_platform::PlatformFailure> {
-            let text = self.outputs.pop_front().unwrap_or_default();
-            let mut stdout = BoundedVec::new();
-            let _ = stdout.try_extend(text.as_bytes().to_vec());
-            Ok(CommandResult {
-                exit_code: Some(0),
-                stdout,
-                stderr: BoundedVec::new(),
-            })
-        }
-    }
-
     /// Runner recording every command line for assertion.
-    pub(crate) struct RecordingRunner {
-        pub(crate) commands: Vec<String>,
+    pub(super) struct RecordingRunner {
+        pub(super) commands: Vec<String>,
     }
 
     impl CommandRunner for RecordingRunner {
@@ -216,12 +165,6 @@ mod tests {
     }
 
     #[test]
-
-
-    #[test]
-
-
-    #[test]
     fn split_endpoint_separates_host_and_port() {
         assert_eq!(split_endpoint("127.0.0.1:7890"), ("127.0.0.1", "7890"));
         // Audit #94: gsettings `host` wants the bare IPv6 address, not the
@@ -229,15 +172,6 @@ mod tests {
         assert_eq!(split_endpoint("[::1]:7890"), ("::1", "7890"));
         assert_eq!(split_endpoint("noport"), ("noport", "0"));
     }
-
-    #[test]
-
-
-    #[test]
-
-
-    #[test]
-
 
     #[test]
     fn apply_enabled_writes_split_host_and_port_keys() -> Result<(), ActorFailure> {
@@ -330,7 +264,7 @@ mod tests {
         assert_eq!(split_endpoint("2001:db8::5"), ("2001:db8::5", "0"));
         assert_eq!(split_endpoint("127.0.0.1:7890"), ("127.0.0.1", "7890"));
         assert_eq!(split_endpoint("proxy.lan"), ("proxy.lan", "0"));
-                            }
+    }
 
     #[test]
     fn restore_auto_sets_auto_mode() -> Result<(), ActorFailure> {
@@ -345,7 +279,7 @@ mod tests {
 
 #[cfg(test)]
 mod pac_tests {
-    use super::tests::{RecordingRunner, ScriptedRunner};
+    use super::tests::RecordingRunner;
     use super::*;
 
     #[test]
@@ -366,12 +300,6 @@ mod pac_tests {
         Ok(())
     }
 
-    #[test]
-
-
-    #[test]
-
-
     /// Restoring a captured `auto` mode re-applies the mode without
     /// touching the endpoint (the PAC URL is untouched by caly).
     #[test]
@@ -380,17 +308,12 @@ mod pac_tests {
             commands: Vec::new(),
         };
         restore(&mut runner, "auto", "file:///tmp/caly/proxy.pac")?;
-        assert!(
-            runner
-                .commands
-                .join("\n")
-                .contains("set org.gnome.system.proxy mode auto")
-        );
+        assert!(runner
+            .commands
+            .join("\n")
+            .contains("set org.gnome.system.proxy mode auto"));
         Ok(())
     }
-
-    #[test]
-
 
     #[test]
     fn restore_unknown_never_touches_gsettings() -> Result<(), ActorFailure> {

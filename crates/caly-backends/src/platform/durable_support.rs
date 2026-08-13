@@ -6,7 +6,7 @@
 //! place avoids drift between the two concrete backends.
 
 use caly_domain::BoundedText;
-use caly_platform::{PlatformFailure, recovery::RecoveryStoreError};
+use caly_platform::{recovery::RecoveryStoreError, PlatformFailure};
 use caly_ports::{ActorFailure, ActorFailureKind};
 
 /// Builds a bounded text, clamping over-long input at a char boundary.

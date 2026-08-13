@@ -112,23 +112,19 @@ fn engage_persists_record_and_disable_clears_it() -> Result<(), String> {
     backend
         .set_system_proxy(true)
         .map_err(|e| format!("{e:?}"))?;
-    assert!(
-        backend
-            .store
-            .load()
-            .map_err(|e| format!("{e:?}"))?
-            .is_some()
-    );
+    assert!(backend
+        .store
+        .load()
+        .map_err(|e| format!("{e:?}"))?
+        .is_some());
     backend
         .set_system_proxy(false)
         .map_err(|e| format!("{e:?}"))?;
-    assert!(
-        backend
-            .store
-            .load()
-            .map_err(|e| format!("{e:?}"))?
-            .is_none()
-    );
+    assert!(backend
+        .store
+        .load()
+        .map_err(|e| format!("{e:?}"))?
+        .is_none());
     cleanup(&path);
     Ok(())
 }
@@ -160,13 +156,11 @@ fn failed_apply_clears_record() -> Result<(), String> {
     let store = shared_store(&path)?;
     let mut backend = DurableSystemProxyBackend::new(fake_control(true), store);
     assert!(backend.set_system_proxy(true).is_err());
-    assert!(
-        backend
-            .store
-            .load()
-            .map_err(|e| format!("{e:?}"))?
-            .is_none()
-    );
+    assert!(backend
+        .store
+        .load()
+        .map_err(|e| format!("{e:?}"))?
+        .is_none());
     cleanup(&path);
     Ok(())
 }
@@ -207,13 +201,11 @@ fn disable_restores_captured_state_and_clears_record() -> Result<(), String> {
         backend.inner.restored,
         Some(("manual".to_owned(), "10.0.0.1:8080".to_owned()))
     );
-    assert!(
-        backend
-            .store
-            .load()
-            .map_err(|e| format!("{e:?}"))?
-            .is_none()
-    );
+    assert!(backend
+        .store
+        .load()
+        .map_err(|e| format!("{e:?}"))?
+        .is_none());
     cleanup(&path);
     Ok(())
 }
@@ -285,13 +277,11 @@ fn restore_original_and_clear_restores_captured_state() -> Result<(), String> {
         backend.inner.restored,
         Some(("manual".to_owned(), "10.0.0.1:8080".to_owned()))
     );
-    assert!(
-        backend
-            .store
-            .load()
-            .map_err(|e| format!("{e:?}"))?
-            .is_none()
-    );
+    assert!(backend
+        .store
+        .load()
+        .map_err(|e| format!("{e:?}"))?
+        .is_none());
     cleanup(&path);
     Ok(())
 }
@@ -308,13 +298,11 @@ fn restore_original_and_clear_retains_record_on_failure() -> Result<(), String> 
         .map_err(|e| format!("{e:?}"))?;
     backend.inner.restore_fail = true;
     assert!(backend.restore_original_and_clear().is_err());
-    assert!(
-        backend
-            .store
-            .load()
-            .map_err(|e| format!("{e:?}"))?
-            .is_some()
-    );
+    assert!(backend
+        .store
+        .load()
+        .map_err(|e| format!("{e:?}"))?
+        .is_some());
     cleanup(&path);
     Ok(())
 }

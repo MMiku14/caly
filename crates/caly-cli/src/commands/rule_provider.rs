@@ -22,7 +22,7 @@ use std::process::ExitCode;
 
 use crate::cli::{RuleProviderSourceSpec, SetRuleProviderCmd};
 use crate::client::rule_provider as cmd;
-use crate::commands::set::common::{ResourceVerb, run_standard_writer};
+use crate::commands::set::common::{crud_dispatch, run_standard_writer, ResourceVerb};
 use crate::output::CliOutput;
 
 /// The singular resource name used by
@@ -162,118 +162,51 @@ pub fn dispatch_with_paths(
             dry_run,
         } => crud_dispatch(
             output,
-            paths,
+            CLI_PREFIX,
+            NOUN,
             &name,
             apply,
             dry_run,
             ResourceVerb::Remove,
-            cmd::remove_provider,
+            |apply| cmd::remove_provider(paths, &name, apply),
+            code_for,
         ),
         SetRuleProviderCmd::Enable {
             name,
             apply,
             dry_run,
-        } => {
-            // The `set_enabled(paths, name, true, apply)`
-            // projection has a fixed `enabled: true`
-            // first arg, so it can't be passed as a
-            // plain function reference (the signature
-            // would be `Fn(&AppPaths, &str, bool) -> _`
-            // — but the writer's 2nd arg is `bool`
-            // for `enabled`, not `apply`). The closure
-            // binds the first arg.
-            let writer =
-                |paths: &_, name: &str, apply: bool| cmd::set_enabled(paths, name, true, apply);
-            crud_dispatch(
-                output,
-                paths,
-                &name,
-                apply,
-                dry_run,
-                ResourceVerb::Enable,
-                writer,
-            )
-        }
+        } => crud_dispatch(
+            output,
+            CLI_PREFIX,
+            NOUN,
+            &name,
+            apply,
+            dry_run,
+            ResourceVerb::Enable,
+            // `set_enabled` has a fixed `enabled` first
+            // arg, so it can't be passed as a plain
+            // function reference; the closure binds it.
+            |apply| cmd::set_enabled(paths, &name, true, apply),
+            code_for,
+        ),
         SetRuleProviderCmd::Disable {
             name,
             apply,
             dry_run,
-        } => {
-            let writer =
-                |paths: &_, name: &str, apply: bool| cmd::set_enabled(paths, name, false, apply);
-            crud_dispatch(
-                output,
-                paths,
-                &name,
-                apply,
-                dry_run,
-                ResourceVerb::Disable,
-                writer,
-            )
-        }
+        } => crud_dispatch(
+            output,
+            CLI_PREFIX,
+            NOUN,
+            &name,
+            apply,
+            dry_run,
+            ResourceVerb::Disable,
+            |apply| cmd::set_enabled(paths, &name, false, apply),
+            code_for,
+        ),
         SetRuleProviderCmd::Refresh { name } => refresh(name, output),
         SetRuleProviderCmd::List => list(paths, output),
     }
-}
-
-/// Round 30: the inner dispatch helper for the
-/// 3 simple-CRUD leaves (`remove` / `enable` /
-/// `disable`). Pre-Round 30 each of the 3 arms
-/// in [`dispatch_with_paths`] was a 7-line
-/// `run_standard_writer(...)` call that differed
-/// only in the `ResourceVerb` variant + the
-/// `cmd::*` writer function + the `enabled: bool`
-/// literal. The 3 arms now collapse into this
-/// single helper: the verb + the writer closure
-/// are the only per-call data, the leaf string /
-/// envelope / summary / classify / payload are
-/// all folded into `run_standard_writer`. The
-/// `Add` arm stays inline because its writer
-/// (`add_provider`) takes 2 extra arguments
-/// (`&source` / `RpBehavior::DEFAULT`) that the
-/// generic helper would have to thread through
-/// (the `W` closure type would no longer be a
-/// clean `Fn(&AppPaths, &str, bool) -> Result`
-/// — the closure would have to be a
-/// `Fn(&AppPaths, &str, &RpSourceSpec, RpBehavior,
-/// bool) -> Result`, which is a worse
-/// abstraction).
-///
-/// `W` is the writer closure type; the
-/// `Fn(&AppPaths, &str, bool) -> Result<RpWriteOutcome, RpWriteError>`
-/// signature matches the 3 `cmd::*` functions
-/// exactly.
-fn crud_dispatch<W>(
-    output: CliOutput,
-    paths: &caly_platform::paths::AppPaths,
-    name: &str,
-    apply: bool,
-    dry_run: bool,
-    verb: ResourceVerb,
-    writer: W,
-) -> ExitCode
-where
-    W: FnOnce(
-        &caly_platform::paths::AppPaths,
-        &str,
-        bool,
-    ) -> Result<cmd::RpWriteOutcome, cmd::RpWriteError>,
-{
-    // `--apply` and `--dry-run` are mutually
-    // exclusive (clap enforces it). `apply:
-    // true` writes, `dry_run: true` runs every
-    // check + reports planned, both `false`
-    // (default) is the safe dry-run path.
-    let effective_apply = apply && !dry_run;
-    run_standard_writer(
-        output,
-        CLI_PREFIX,
-        NOUN,
-        verb,
-        name,
-        || writer(paths, name, effective_apply),
-        code_for,
-    )
 }
 
 /// Maps the CLI `RuleProviderSourceSpec` to the writer's
