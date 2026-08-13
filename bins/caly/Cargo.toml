@@ -37,7 +37,6 @@ clap.workspace = true
 clap_complete.workspace = true
 # Q2/D18 (2026-08-11): W2 interactive pickers — see the workspace
 # manifest comment for the 4-step bookkeeping.
-dialoguer.workspace = true
 console.workspace = true
 unicode-width.workspace = true
 # W2-β2a (Q5): file:// URL form for `sub add` local-file sources

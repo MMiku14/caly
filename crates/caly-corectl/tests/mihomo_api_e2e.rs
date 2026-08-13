@@ -16,7 +16,7 @@ use caly_corectl::{
     mihomo::{MihomoHttpControl, MihomoRuntime, MihomoSpawnSpecFactory},
 };
 use caly_platform::{
-    fs::{AtomicFileContents, AtomicWritePlan, LinuxAtomicFileBackend, atomic_write},
+    fs::{atomic_write, AtomicFileContents, AtomicWritePlan, LinuxAtomicFileBackend},
     process::LinuxProcessSpawner,
 };
 
@@ -188,7 +188,9 @@ fn mihomo_real_binary_exposes_rich_clash_api() -> E2eResult {
     let mut groups = api
         .proxy_groups(Duration::from_secs(2))
         .map_err(e2e_error)?;
-    while !groups.iter().any(|g| g.name == "GLOBAL" || g.name == "DIRECT")
+    while !groups
+        .iter()
+        .any(|g| g.name == "GLOBAL" || g.name == "DIRECT")
         && std::time::Instant::now() < deadline
     {
         std::thread::sleep(std::time::Duration::from_millis(50));

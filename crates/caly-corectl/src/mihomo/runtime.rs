@@ -4,8 +4,8 @@ use std::time::Duration;
 
 use caly_domain::BoundedText;
 use caly_platform::{
+    process::{stop_and_reap, OwnedProcessTree, ProcessExit, ProcessSpawner},
     PlatformFailure,
-    process::{OwnedProcessTree, ProcessExit, ProcessSpawner, stop_and_reap},
 };
 
 use crate::common::{failure, wait_ready_detecting_exit};
@@ -221,8 +221,8 @@ mod tests {
     }
 
     #[test]
-    fn runtime_starts_health_checks_restarts_and_stops_owned_process()
-    -> Result<(), MihomoRuntimeError> {
+    fn runtime_starts_health_checks_restarts_and_stops_owned_process(
+    ) -> Result<(), MihomoRuntimeError> {
         let script = std::env::temp_dir().join(format!(
             "caly-mihomo-runtime-{}",
             SystemTime::now()

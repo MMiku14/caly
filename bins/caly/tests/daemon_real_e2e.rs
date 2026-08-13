@@ -445,7 +445,10 @@ fn start_daemon_once(
         .env("XDG_CONFIG_HOME", runtime.join("config"))
         .env("HOME", &runtime)
         .env("CALY_MIHOMO_BIN", mihomo)
-        .env("CALY_MIHOMO_CONTROLLER", format!("127.0.0.1:{controller_port}"))
+        .env(
+            "CALY_MIHOMO_CONTROLLER",
+            format!("127.0.0.1:{controller_port}"),
+        )
         .stdout(log_handle.try_clone().map_err(|error| error.to_string())?)
         .stderr(log_handle);
     let daemon = DaemonGuard {

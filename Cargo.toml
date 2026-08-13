@@ -74,22 +74,26 @@ tokio-rustls = { version = "0.26", default-features = false, features = [
   "ring",
 ] }
 rustls-pemfile = "2"
-# Q2 (2026-08-11, cli-v3-design.md §13-1 四步记账): dialoguer powers
-# the W2 interactive pickers (`node select` with no argument, `sub add`
-# naming). Step 1 = this comment; step 2 = crate-budgets.toml
-# [external-policy] registers `dialoguer = ["caly"]`; step 3 — the
+# Q2 (2026-08-11, cli-v3-design.md §13-1 四步记账,2026-08-13 换栈):
+# inquire powers the W2 interactive pickers (`node select` with no
+# argument, `sub add` naming); 2026-08-13 dialoguer 0.12 换栈 inquire
+# 0.9.4 (P8a 后选择器随 CLI 面落入 caly-cli,external-policy 同步归位)。
+# Step 1 = this comment; step 2 = crate-budgets.toml
+# [external-policy] registers `inquire = ["caly-cli"]`; step 3 — the
 # workspace-wide `#![forbid(unsafe_code)]` governs only our own crates,
 # external deps are unaffected by it; step 4 — if the crate ever breaks
 # the build, roll back to an in-house prompt and record the swap in
-# docs/cli-v3-design.md. `fuzzy-select` (2026-08-12): pools above 10
+# docs/cli-v3-design.md. Fuzzy filter (2026-08-12): pools above 10
 # entries switch to the type-to-search filter (`node pick` member
-# picker / long online `node select` lists).
-dialoguer = { version = "0.12", features = ["fuzzy-select"] }
+# picker / long online `node select` lists); inquire enables `fuzzy` by
+# default.
+inquire = "0.9"
 console = "0.16"
 # 2026-08-12 渲染重构: char_width 手工 EAW 区间表连续三轮 agent 审计出与
 # unicode-width 的差异(毯式 1F200-1FAFF 过宽、组合符归零不完整)。该 crate
-# 已是 console/dialoguer 的传递依赖(锁文件 0.2.2),显式声明零新增成本,
-# 把终端列宽计算交给生态事实标准(console/ratatui 同款)。
+# 已是 console 的传递依赖(锁文件 0.2.2;inquire 换栈后不再是 dialoguer
+# 依赖,但显式声明依旧零新增成本),把终端列宽计算交给生态事实标准
+# (console/ratatui 同款)。
 unicode-width = "0.2"
 tokio = { version = "1", features = [
   "rt-multi-thread",

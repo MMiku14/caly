@@ -600,7 +600,7 @@ fn node_pick_and_group_test_contract() -> Result<(), String> {
 
     let selector = "selector-main"; // 节点选择
     let auto = "auto-test"; // 自动选择
-    // 1. Omitted member on a non-TTY: usage error, never a hang.
+                            // 1. Omitted member on a non-TTY: usage error, never a hang.
     let (code, _, stderr) = w4_run(&runtime, &["node", "pick", selector])?;
     if code != 2 || !stderr.contains("requires <member>") {
         return Err(format!(

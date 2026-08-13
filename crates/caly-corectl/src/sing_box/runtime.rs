@@ -4,7 +4,7 @@ use std::{path::PathBuf, time::Duration};
 
 use caly_domain::BoundedText;
 use caly_platform::process::{
-    LinuxProcessSpawner, OwnedProcessTree, ProcessExit, ProcessSpawner, stop_and_reap,
+    stop_and_reap, LinuxProcessSpawner, OwnedProcessTree, ProcessExit, ProcessSpawner,
 };
 
 use super::{SingBoxHttpControl, SingBoxSpawnSpecFactory};

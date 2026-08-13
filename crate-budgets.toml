@@ -34,15 +34,16 @@
 # 决策 #75:reqwest 是 WAN 边界,只允许出现在白名单 crate。
 # P6 已完成:白名单自 caly-profile 换标至 caly-subscription。
 reqwest = ["caly-subscription"]
-# Q2(2026-08-11,cli-v3-design.md §13-1 / D18 第 2 步):dialoguer 是
-# W2 交互选择器,只允许出现在 bins/caly;构建障碍回退自研 prompt。
-dialoguer = ["caly"]
+# Q2(2026-08-11,cli-v3-design.md §13-1 / D18 第 2 步,2026-08-13 换栈):
+# inquire 是 W2 交互选择器,只允许出现在 caly-cli(P8a 后随 CLI 面
+# 落位);构建障碍回退自研 prompt。dialoguer 0.12 已整体移除。
+inquire = ["caly-cli"]
 # 2026-08-13 第七轮:live picker(`node select` 无参)手写后直接依赖
-# console(渲染/raw mode)与 crossterm(超时按键),均只允许 bins/caly;
-# 回退面:console 是 dialoguer 的既有传递依赖(零新增),crossterm 的
-# poll 可换回 console read_key(失去超时重绘,功能项进度降级为按键刷新)。
-console = ["caly"]
-crossterm = ["caly"]
+# console(渲染/raw mode)与 crossterm(超时按键),均只允许 caly-cli;
+# 回退面:console 是既有显式依赖(零新增),crossterm 的 poll 可换回
+# console read_key(失去超时重绘,功能项进度降级为按键刷新)。
+console = ["caly-cli"]
+crossterm = ["caly-cli"]
 # W2-β2a(Q5):url crate 自 P 期即为 schema/fetch/backends 的存量
 # 依赖;β2a 起 bins/caly 也用它把 `sub add` 文件源落成合法 file://
 # URI(`Url::from_file_path`)。白名单 = 现存的 4 个消费点,不外溢。

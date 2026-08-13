@@ -370,7 +370,7 @@ fn finish_pick(
 }
 
 /// Interactive member picker (W4 §7): a live terminal without an explicit
-/// member gets the dialoguer menu. Esc → `Err(exit 1)` after printing
+/// member gets the inquire menu. Esc → `Err(exit 1)` after printing
 /// `cancelled, nothing changed`; Ctrl-C → `Err(130)` via the picker
 /// contract. Long member pools (>10) auto-switch to the fuzzy filter
 /// (type-to-search) inside [`crate::client::interact::pick`].
@@ -446,7 +446,7 @@ mod tests {
         assert_eq!(node.label, "[vmess]        hk-01  —");
         let direct = member_pick_item(&member("direct", "DIRECT"));
         assert_eq!(direct.label, "[direct]       DIRECT  —");
-        // CJK names keep their visible width in the label (dialoguer
+        // CJK names keep their visible width in the label (inquire
         // measures with unicode-width; the lane is spaces so alignment
         // is byte-agnostic).
         let cjk = member_pick_item(&member("node", "日本-香港一"));
