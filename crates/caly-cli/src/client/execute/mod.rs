@@ -248,7 +248,7 @@ pub(crate) fn handshake(client: &mut UdsClient) -> Result<(), ClientError> {
     client.handshake(HandshakeRequest {
         client_version: ProtocolVersion::V2_0,
         requested_features: all_features(),
-        auth_token: crate::daemon_config::auth_token(),
+        auth_token: crate::config::auth_token(),
     })?;
     Ok(())
 }

@@ -41,7 +41,7 @@ impl DaemonAssembly {
         subscription_urls: Vec<String>,
         tuning: caly_composition::RuntimeTuning,
     ) -> Result<Self, CompositionError> {
-        let telemetry_interval_ms = crate::daemon_config::telemetry_interval_ms();
+        let telemetry_interval_ms = caly_cli::config::telemetry_interval_ms();
         Ok(Self {
             bootstrap: BootstrapDriver::new(),
             application: ApplicationComposition::new_with_binaries(

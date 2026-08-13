@@ -27,10 +27,10 @@ use serde_norway::Value;
 
 use crate::{
     loader::{LoaderBudget, LoaderBudgetError, LoaderLimits},
-    schema::{AppConfig, ConfigError, validate},
+    schema::{validate, AppConfig, ConfigError},
 };
 
-use super::file::{ConfigFileError, read_bounded_regular_file};
+use super::file::{read_bounded_regular_file, ConfigFileError};
 
 /// Resolved layered configuration locations.
 pub struct LayeredConfigPaths {

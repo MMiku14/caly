@@ -7,7 +7,7 @@ use caly_domain::{
     SubscriptionId,
 };
 
-use super::{DecodeError, cursor_from_wire};
+use super::{cursor_from_wire, DecodeError};
 use crate::protocol::v2::{
     CollectionKind, DecodeBudget, WireAppliedState, WireCapabilityStatus, WireDesiredState,
     WireDisplayNode, WirePlatformEffect, WirePresentationSnapshot,

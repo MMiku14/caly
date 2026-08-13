@@ -18,7 +18,7 @@ pub fn init() -> bool {
     let filter = std::env::var("CALY_LOG")
         .ok()
         .or_else(|| std::env::var("RUST_LOG").ok())
-        .or_else(|| Some(crate::daemon_config::log_level()))
+        .or_else(|| Some(caly_cli::config::log_level()))
         .unwrap_or_else(|| "info".to_owned());
     // Audit #97: `EnvFilter::new` *panics* on an unparseable directive, and
     // the directive comes from the process environment — one bad `CALY_LOG`

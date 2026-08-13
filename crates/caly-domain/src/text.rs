@@ -2,7 +2,7 @@
 
 use core::{fmt, marker::PhantomData};
 
-use serde::{Deserialize, Deserializer, de};
+use serde::{de, Deserialize, Deserializer};
 
 /// Error returned when text violates a domain size invariant.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

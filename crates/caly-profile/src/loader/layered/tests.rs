@@ -48,12 +48,10 @@ fn declared_profiles_are_merged_in_declaration_order() {
     assert_eq!(config.profiles.len(), 2);
     assert!(config.tun.enabled);
     assert_eq!(config.tun.mtu, 1400);
-    assert!(
-        config
-            .rules
-            .iter()
-            .any(|line| line.contains("DOMAIN-SUFFIX,example.com"))
-    );
+    assert!(config
+        .rules
+        .iter()
+        .any(|line| line.contains("DOMAIN-SUFFIX,example.com")));
 
     fs::remove_dir_all(&root).ok();
 }

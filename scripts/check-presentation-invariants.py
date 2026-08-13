@@ -2,9 +2,10 @@
 """Non-compiling checks for thin-client and truthful-UX invariants.
 
 Retargeted after the TUI-era crate (caly-tui) was removed: the client
-surface now lives in `bins/caly/src/client/` (RPC) plus the protocol
-crate's conversion/budget seams, and the offline tree face lives in
-`bins/caly/src/entry_tree.rs`.
+surface now lives in `crates/caly-cli/src/client/` (RPC) plus the
+protocol crate's conversion/budget seams, and the offline tree face
+lives in `crates/caly-cli/src/entry_tree.rs` (P8a: presentation layer
+moved out of `bins/caly`).
 
 Invariants kept (hard gates, exit 1 on violation):
 
@@ -65,12 +66,12 @@ def main() -> int:
     # Server applies decode limits at accept time.
     require("bins/caly/src/daemon.rs", "DecodeLimits::v2_default()")
     # Client snapshot reads are best-effort (offline commands stay usable).
-    require("bins/caly/src/client/mod.rs", "active_core_kind_label")
-    require("bins/caly/src/client/mod.rs", "client.snapshot().ok()?")
+    require("crates/caly-cli/src/client/mod.rs", "active_core_kind_label")
+    require("crates/caly-cli/src/client/mod.rs", "client.snapshot().ok()?")
     # Offline entry tree is pure config-side projection: no daemon RPC.
-    require("bins/caly/src/entry_tree.rs", "offline")
-    forbid("bins/caly/src/entry_tree.rs", "UdsClient")
-    forbid("bins/caly/src/entry_tree.rs", "caly_server")
+    require("crates/caly-cli/src/entry_tree.rs", "offline")
+    forbid("crates/caly-cli/src/entry_tree.rs", "UdsClient")
+    forbid("crates/caly-cli/src/entry_tree.rs", "caly_server")
 
     for error in ERRORS:
         print(f"error: {error}", file=sys.stderr)

@@ -2,9 +2,9 @@
 
 use std::path::Path;
 
-use super::{LockOwner, process_start_id};
-use crate::PlatformFailure;
+use super::{process_start_id, LockOwner};
 use crate::bounded_text as bounded;
+use crate::PlatformFailure;
 
 /// Reads the process state character (field 3 of `/proc/<pid>/stat`).
 fn process_state(pid: u32) -> std::io::Result<char> {

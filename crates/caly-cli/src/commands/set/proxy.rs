@@ -316,7 +316,7 @@ fn generate_pac_file() -> Result<String, ExitCode> {
     // A missing config falls back to the daemon's 7890 default, but a
     // present-but-unreadable config must fail loudly — silently generating a
     // PAC against the wrong port black-holes everything through the proxy.
-    let port: u16 = match crate::daemon_config::load_from(paths.config.clone()) {
+    let port: u16 = match crate::config::load_from(paths.config.clone()) {
         Ok(Some(config)) => config.kernel.mixed_port,
         Ok(None) => 7890,
         Err(error) => {

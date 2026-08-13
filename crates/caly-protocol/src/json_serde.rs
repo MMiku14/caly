@@ -28,7 +28,7 @@ fn parse_hex(value: &str) -> Result<[u8; 16], String> {
 
 /// `[u8; 16]` identity as a hex string.
 pub mod hex_id {
-    use super::{Deserialize, Deserializer, parse_hex};
+    use super::{parse_hex, Deserialize, Deserializer};
     use serde::Serializer;
 
     pub fn serialize<S>(value: &[u8; 16], serializer: S) -> Result<S::Ok, S::Error>
@@ -49,7 +49,7 @@ pub mod hex_id {
 
 /// `Option<[u8; 16]>` identity: `null` or a 32-character hex string.
 pub mod hex_id_opt {
-    use super::{Deserialize, Deserializer, hex_id, parse_hex};
+    use super::{hex_id, parse_hex, Deserialize, Deserializer};
     use serde::Serializer;
 
     pub fn serialize<S>(value: &Option<[u8; 16]>, serializer: S) -> Result<S::Ok, S::Error>

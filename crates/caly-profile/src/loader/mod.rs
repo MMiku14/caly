@@ -4,10 +4,10 @@ mod file;
 mod layered;
 mod publish;
 
-pub use file::{ConfigFileError, load_config_file, load_json_file};
+pub use file::{load_config_file, load_json_file, ConfigFileError};
 pub use layered::{
-    InMemoryProfileResolver, LayeredConfigError, LayeredConfigPaths, ProfileBodyResolver,
-    load_layered_yaml, load_layered_yaml_strict, load_layered_yaml_with,
+    load_layered_yaml, load_layered_yaml_strict, load_layered_yaml_with, InMemoryProfileResolver,
+    LayeredConfigError, LayeredConfigPaths, ProfileBodyResolver,
 };
 pub use publish::{
     ConfigArtifact, ConfigGeneration, ConfigGenerationStore, ConfigPublisher, PublishFailure,

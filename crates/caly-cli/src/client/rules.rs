@@ -10,7 +10,7 @@ use caly_profile::rule_match::{match_host, match_ip};
 /// Executes an offline rule command (`core rules` / `core rule-match`).
 pub(super) fn run_rules(cmd: &super::legacy::CoreCmd, json: bool) -> ExitCode {
     use super::legacy::CoreCmd;
-    let rules = crate::daemon_config::routing_rules();
+    let rules = crate::config::routing_rules();
     match cmd {
         CoreCmd::Rules => list_rules(&rules, json),
         CoreCmd::RuleMatch(target) => rule_match(&rules, target, json),

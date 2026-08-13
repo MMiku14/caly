@@ -3,7 +3,7 @@
 use std::collections::VecDeque;
 
 use caly_domain::BoundedVec;
-use caly_platform::{PlatformFailure, paths::SafeName};
+use caly_platform::{paths::SafeName, PlatformFailure};
 
 use crate::schema::MAX_CONFIG_BYTES;
 

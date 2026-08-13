@@ -151,7 +151,7 @@ pub fn edit_config(editor: Editor, json: bool) -> ExitCode {
 /// Validates the effective layered configuration without starting a daemon.
 pub fn validate_active_config(json: bool) -> ExitCode {
     let root = caly_platform::paths::AppPaths::from_env().config;
-    match crate::daemon_config::load_from(root.clone()) {
+    match crate::config::load_from(root.clone()) {
         Ok(Some(_)) => {
             if json {
                 println!(
@@ -290,7 +290,7 @@ fn write_default(root: &Path, path: &Path, overwrite_fragments: bool) -> Result<
     // Self-check: the generated layout must load through the same layered
     // loader the daemon uses at boot. A failure here is a renderer regression
     // and must surface loudly instead of bricking the next daemon start.
-    crate::daemon_config::load_from(root.to_path_buf()).map_err(|error| {
+    crate::config::load_from(root.to_path_buf()).map_err(|error| {
         format!(
             "generated configuration failed validation: {error}; \
              inspect {} before starting the daemon",

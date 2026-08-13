@@ -5,8 +5,8 @@ use caly_domain::{EventCursor, ObservedState, PresentationDelta};
 use crate::protocol::v2::{DecodeBudget, WireEvent, WirePayload, WireProjectionEvent};
 
 use super::{
-    DecodeError, applied_from_wire, capabilities_from_wire, cursor_from_wire, desired_from_wire,
-    nodes_from_wire, platform_from_wire,
+    applied_from_wire, capabilities_from_wire, cursor_from_wire, desired_from_wire,
+    nodes_from_wire, platform_from_wire, DecodeError,
 };
 
 /// Known Domain delta or preserved future event.

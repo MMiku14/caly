@@ -36,7 +36,7 @@ pub fn run_sysproxy(options: &crate::cli::CliOptions) -> ExitCode {
         Err(()) => return ExitCode::FAILURE,
     };
     let declared = &declared;
-    let (host, port) = crate::daemon_config::system_proxy_endpoint_from_config(config.as_ref());
+    let (host, port) = crate::config::system_proxy_endpoint_from_config(config.as_ref());
     let expected_endpoint = format!("{host}:{port}");
     let actual = desktop_proxy_state(&host, port);
     let record = paths.recovery_record_path();
@@ -214,7 +214,7 @@ pub fn run_tun(options: &crate::cli::CliOptions) -> ExitCode {
 /// config.yaml); a corrupt config is reported through the
 /// standard envelope and surfaces as `Err(())` → exit 1.
 fn load_config(paths: &AppPaths, json: bool) -> Result<Option<AppConfig>, ()> {
-    crate::daemon_config::load_from(paths.config.clone()).map_err(|error| {
+    crate::config::load_from(paths.config.clone()).map_err(|error| {
         crate::output::report_error(
             crate::output::CliOutput::from_json_flag(json),
             &crate::error::CliError::new(

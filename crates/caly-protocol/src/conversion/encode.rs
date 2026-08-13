@@ -6,10 +6,9 @@ use caly_domain::{
 };
 
 use crate::protocol::v2::{
-    MAX_WIRE_PROXY_GROUPS, RawFailureCode, RawOperationState, WireAppliedState,
-    WireCapabilityStatus, WireDesiredState, WireDisplayNode, WireObservedState,
-    WireOperationFailure, WireOperationStatus, WirePlatformEffect, WirePresentationSnapshot,
-    WireProxyGroup,
+    RawFailureCode, RawOperationState, WireAppliedState, WireCapabilityStatus, WireDesiredState,
+    WireDisplayNode, WireObservedState, WireOperationFailure, WireOperationStatus,
+    WirePlatformEffect, WirePresentationSnapshot, WireProxyGroup, MAX_WIRE_PROXY_GROUPS,
 };
 
 use super::cursor_to_wire;

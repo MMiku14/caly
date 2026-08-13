@@ -76,8 +76,10 @@ max_dependents = 4
 # P4 出生线(docs/crate-replan.md §8 表):caly-dns ≤ 2200。收容 domain DNS
 # 三文件 + platform probe/wire;结构化 Nameserver 落地(kind/address/path
 # 视图,解析 total 且与渲染历史 cut 规则逐字节同构)。实测 1262。
+# P8a:表现层出生,caly-cli 的 `tool dns` 探测实现随迁入 caly-cli(dns.rs
+# 纯 caly-dns + std),dependents 6 → 7。
 max_loc = 2200
-max_dependents = 6
+max_dependents = 7
 
 [budgets.caly-coreconf]
 # P3a 新增:纯渲染 crate(deps 仅 caly-domain + serde/serde_json;dev-dep
@@ -103,7 +105,9 @@ max_dependents = 5
 # (SSRF 安全解析,与 intake 本就是闭环),实测 3221;fixture_corpus 集成
 # 测试随迁 tests/。reqwest 白名单持有者(#75 换标)。
 max_loc = 4100
-max_dependents = 5
+# P8a:caly-cli 消费 intake 哈希(subscription_id_for_url 归位,§1.3),
+# dependents 5 → 6。
+max_dependents = 6
 
 [budgets.caly-backends]
 # P3a 收容 subscription 渲染融合层 render_compose(自 caly-profile 迁入)
@@ -129,8 +133,10 @@ max_dependents = 3
 # 含 456 行随迁测试),WallClock 回迁后实测 3971 + ~5% → 4170。
 # dependents == 1(bins/caly 是唯一宿主,§6 决议)。
 # 出生后随 application 服务层接线增长,实测 4316 + ~5% → 4535。
+# P8a:caly-cli 过渡态依赖 composition(CoreBinaryPaths 读取,§1.3),
+# dependents 1 → 2;P8b 将 CoreBinaryPaths 下移 platform 后回落。
 max_loc = 4535
-max_dependents = 1
+max_dependents = 2
 
 [budgets.caly-protocol]
 max_loc = 3100

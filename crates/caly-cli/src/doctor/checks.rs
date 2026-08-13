@@ -176,7 +176,7 @@ fn check_core_work_dir(paths: &AppPaths) -> DoctorResult {
 /// so doctor surfaces it before the user hits it at runtime.
 fn check_core_binaries(paths: &AppPaths) -> DoctorResult {
     let configured =
-        crate::daemon_config::core_binaries_from(paths.config.clone()).unwrap_or_default();
+        crate::config::core_binaries_from(paths.config.clone()).unwrap_or_default();
     let mut all_ok = true;
     let mut lines = Vec::new();
     for (name, configured_path) in [
@@ -210,7 +210,7 @@ fn check_core_binaries(paths: &AppPaths) -> DoctorResult {
 /// missing/unreadable, because the core process will then exit at start.
 /// Resolves the kernel TUN device node the core needs when TUN is enabled.
 fn check_tun_device(paths: &AppPaths) -> DoctorResult {
-    let enabled = crate::daemon_config::load_from(paths.config.clone())
+    let enabled = crate::config::load_from(paths.config.clone())
         .ok()
         .flatten()
         .is_some_and(|config| config.tun.enabled);
@@ -238,7 +238,7 @@ fn check_tun_device(paths: &AppPaths) -> DoctorResult {
 /// silent TUN failure, so doctor names the exact binaries and points at
 /// `caly doctor --fix` for a single-password remediation.
 pub(super) fn check_tun_cap(paths: &AppPaths) -> DoctorResult {
-    let enabled = crate::daemon_config::load_from(paths.config.clone())
+    let enabled = crate::config::load_from(paths.config.clone())
         .ok()
         .flatten()
         .is_some_and(|config| config.tun.enabled);
@@ -280,7 +280,7 @@ pub(super) fn check_tun_cap(paths: &AppPaths) -> DoctorResult {
 /// managed core binaries (whichever is active opens the TUN device).
 pub(super) fn tun_capability_targets(paths: &AppPaths) -> Vec<(&'static str, PathBuf)> {
     let configured =
-        crate::daemon_config::core_binaries_from(paths.config.clone()).unwrap_or_default();
+        crate::config::core_binaries_from(paths.config.clone()).unwrap_or_default();
     let mut targets = Vec::new();
     targets.push(("ip", resolve_ip_binary()));
     for (name, configured_path) in [

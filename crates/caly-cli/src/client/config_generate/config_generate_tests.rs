@@ -27,7 +27,7 @@ fn generate_writes_a_valid_layout_into_an_empty_root() {
     assert!(root.join("config.yaml").is_file());
     assert!(root.join("config.d/10-core.yaml").is_file());
     // The written layout must load through the daemon's layered loader.
-    let loaded = crate::daemon_config::load_from(root.clone());
+    let loaded = crate::config::load_from(root.clone());
     assert!(
         matches!(loaded, Ok(Some(_))),
         "generated layout must validate: {loaded:?}"
@@ -70,7 +70,7 @@ fn reset_preserves_modified_content_in_a_backup_directory() {
     // The live layout is a fresh, valid default again.
     let refreshed = fs::read_to_string(&fragment).unwrap_or_default();
     assert!(refreshed.contains("subscriptions: {}"));
-    let loaded = crate::daemon_config::load_from(root.clone());
+    let loaded = crate::config::load_from(root.clone());
     assert!(matches!(loaded, Ok(Some(_))), "reset layout: {loaded:?}");
     fs::remove_dir_all(&root).ok();
     fs::remove_dir_all(&backup_dir).ok();

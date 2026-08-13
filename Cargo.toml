@@ -15,6 +15,7 @@ members = [
   "crates/caly-protocol",
   "crates/caly-server",
   "crates/caly-template",
+  "crates/caly-cli",
   "bins/caly",
   "bins/caly-template-worker",
 ]
@@ -43,6 +44,7 @@ caly-composition = { path = "crates/caly-composition" }
 caly-protocol = { path = "crates/caly-protocol" }
 caly-server = { path = "crates/caly-server" }
 caly-template = { path = "crates/caly-template" }
+caly-cli = { path = "crates/caly-cli" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

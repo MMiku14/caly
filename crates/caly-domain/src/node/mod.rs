@@ -11,8 +11,8 @@ mod validation;
 
 pub use dialable::{DialableNode, NodeBuilder, NodeTag, NodeTags};
 pub use display::{
-    DisplayNode, NODE_DISPLAY_NAME_MAX_BYTES, NodeDisplayName, NodeProtocolLabel,
-    sanitized_display_name,
+    sanitized_display_name, DisplayNode, NodeDisplayName, NodeProtocolLabel,
+    NODE_DISPLAY_NAME_MAX_BYTES,
 };
 pub use endpoint::{Endpoint, EndpointHost, HostError};
 pub use protocol::{

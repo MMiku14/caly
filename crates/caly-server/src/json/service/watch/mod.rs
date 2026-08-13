@@ -15,10 +15,10 @@ use std::{
 
 use caly_application::{events::SequencedEvent, service::ApplicationServicePort};
 use caly_protocol::protocol::v2::WatchResponse;
-use tokio_stream::{Stream, wrappers::BroadcastStream};
+use tokio_stream::{wrappers::BroadcastStream, Stream};
 
-use super::{ServiceError, ServiceState, lock_state};
-use super::{ServiceV2, event_to_wire};
+use super::{event_to_wire, ServiceV2};
+use super::{lock_state, ServiceError, ServiceState};
 
 /// Yields the initial replay/snapshot, then follows live projection events.
 pub struct WatchStream<A> {

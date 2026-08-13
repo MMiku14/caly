@@ -3,7 +3,7 @@
 use super::super::{
     CongestionControl, Credential, Protocol, ShadowsocksCipher, ShadowsocksPlugin, VmessCipher,
 };
-use super::{CanonicalEncoder, optional_text};
+use super::{optional_text, CanonicalEncoder};
 
 pub(super) fn encode(writer: &mut CanonicalEncoder, protocol: &Protocol) {
     encode_protocol(writer, protocol);

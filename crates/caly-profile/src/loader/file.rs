@@ -7,7 +7,7 @@ use std::{
 };
 
 use crate::schema::{
-    AppConfig, ConfigError, MAX_CONFIG_BYTES, parse_and_validate_json, parse_and_validate_yaml,
+    parse_and_validate_json, parse_and_validate_yaml, AppConfig, ConfigError, MAX_CONFIG_BYTES,
 };
 
 /// File-boundary failure without exposing configuration contents.

@@ -2,7 +2,7 @@
 
 use std::process::ExitCode;
 
-pub fn run(options: crate::cli::CliOptions) -> ExitCode {
+pub fn run(options: caly_cli::cli::CliOptions) -> ExitCode {
     let paths = caly_platform::paths::AppPaths::from_env();
     // `--socket` / `CALY_SOCKET` must steer the daemon's bind path exactly
     // like they steer every client command — previously the daemon always
@@ -79,13 +79,13 @@ pub fn run(options: crate::cli::CliOptions) -> ExitCode {
 }
 
 fn resolve_daemon_config()
--> Result<crate::daemon_config::DaemonSettings, crate::daemon_config::DaemonConfigError> {
+-> Result<crate::daemon_config::DaemonSettings, caly_cli::config::DaemonConfigError> {
     crate::daemon_config::resolve_daemon(caly_platform::paths::AppPaths::from_env().config)
 }
 
 fn apply_daemon_overrides(
     settings: &mut crate::daemon_config::DaemonSettings,
-    options: crate::cli::CliOptions,
+    options: caly_cli::cli::CliOptions,
     daemon_id: caly_domain::DaemonInstanceId,
 ) -> Result<(), ExitCode> {
     if let Some(core) = options.core.as_deref() {

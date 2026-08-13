@@ -201,7 +201,7 @@ fn nameservers_from(get: impl Fn() -> Option<String>) -> Vec<String> {
     if !parsed.is_empty() {
         return parsed;
     }
-    let configured = crate::daemon_config::dns_nameservers();
+    let configured = crate::config::dns_nameservers();
     if !configured.is_empty() {
         return configured;
     }

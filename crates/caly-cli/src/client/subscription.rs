@@ -204,7 +204,7 @@ pub fn list_providers(
 ) -> std::process::ExitCode {
     use std::process::ExitCode;
     let root = caly_platform::paths::AppPaths::from_env().config;
-    let (declared, providers) = match crate::daemon_config::load_from(root) {
+    let (declared, providers) = match crate::config::load_from(root) {
         Ok(None) => (
             caly_profile::schema::SubscriptionConfig::default(),
             Vec::new(),

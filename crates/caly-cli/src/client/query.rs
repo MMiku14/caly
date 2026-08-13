@@ -74,7 +74,7 @@ pub(crate) fn build_control(core: &str) -> Result<Box<dyn KernelControl + Send>,
         .or_else(read_daemon_secret)
         .and_then(|value| caly_domain::BoundedText::new(value).ok());
     // Controller endpoints come from the config file (then env, then defaults).
-    let controllers = crate::daemon_config::controllers().map_err(|e| format!("{e:?}"))?;
+    let controllers = crate::config::controllers().map_err(|e| format!("{e:?}"))?;
     match core {
         "mihomo" => caly_corectl::mihomo::MihomoHttpControl::new(controllers.mihomo, secret)
             .map(|control| Box::new(control) as Box<dyn KernelControl + Send>)

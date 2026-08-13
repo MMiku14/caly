@@ -5,7 +5,7 @@ use caly_domain::{
     UnixMillis,
 };
 
-use super::{DecodeError, operation_id_from_wire};
+use super::{operation_id_from_wire, DecodeError};
 use crate::protocol::v2::{
     DecodeBudget, RawFailureCode, RawOperationState, WireOperationFailure, WireOperationStatus,
 };

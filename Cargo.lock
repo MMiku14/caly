@@ -118,6 +118,7 @@ dependencies = [
  "base64",
  "caly-application",
  "caly-backends",
+ "caly-cli",
  "caly-composition",
  "caly-corectl",
  "caly-dns",
@@ -173,6 +174,37 @@ dependencies = [
  "sha2",
  "tokio",
  "tracing",
+ "url",
+]
+
+[[package]]
+name = "caly-cli"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "caly-backends",
+ "caly-composition",
+ "caly-corectl",
+ "caly-dns",
+ "caly-domain",
+ "caly-platform",
+ "caly-profile",
+ "caly-protocol",
+ "caly-subscription",
+ "clap",
+ "clap_complete",
+ "console",
+ "crossterm",
+ "dialoguer",
+ "percent-encoding",
+ "serde",
+ "serde_json",
+ "serde_norway",
+ "sha2",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "unicode-width",
  "url",
 ]
 
