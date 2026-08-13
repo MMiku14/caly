@@ -15,6 +15,17 @@
 //! test pins for the per-node leaf.
 use super::{DelayOutcome, SweepRow};
 
+/// The sweep renderer's shared `jitter_ms` helper (the `query`
+/// free function also used by `DelayProbe::jitter_ms`) reports
+/// `max - min` over the sorted samples, and `None` when there is
+/// no spread to measure (single sample or empty).
+#[test]
+fn jitter_is_max_minus_min_with_zero_spread_default() {
+    assert_eq!(super::jitter_ms(&[50, 200, 800]), Some(750));
+    assert_eq!(super::jitter_ms(&[42]), None);
+    assert_eq!(super::jitter_ms(&[]), None);
+}
+
 /// Two reachable samples `[50, 200]` must
 /// report median 50 (lower middle), matching
 /// `query::DelayProbe`'s 2-sample median. The

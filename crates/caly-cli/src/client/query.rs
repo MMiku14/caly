@@ -16,7 +16,7 @@ pub(crate) const QUERY_TIMEOUT: std::time::Duration = std::time::Duration::from_
 mod probe;
 
 pub(crate) use probe::{DelayProbe, resolve_samples};
-pub(crate) use probe::{median, probe_delay};
+pub(crate) use probe::{jitter_ms, median, probe_delay, stdev_ms};
 
 pub fn run_query(core: &str, query: Query, json: bool) -> ExitCode {
     let mut control = match build_control(core) {

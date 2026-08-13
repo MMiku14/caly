@@ -216,6 +216,20 @@ fn even_sample_count_picks_the_lower_middle() {
     assert_eq!(probe.median_ms(), Some(50));
 }
 
+/// The free `jitter_ms` / `stdev_ms` helpers are the single source of
+/// truth for the spread numbers: `DelayProbe` delegates to them and the
+/// bulk-sweep renderer (`execute::delay::render`) calls them on
+/// `DelayOutcome::Reachable`'s sample vector. Pin the free-fn contract
+/// directly so a drift between the two callers surfaces here.
+#[test]
+fn free_spread_helpers_match_the_method_contract() {
+    assert_eq!(jitter_ms(&[50, 200]), Some(150));
+    assert_eq!(jitter_ms(&[42]), None);
+    assert_eq!(stdev_ms(&[50, 200, 800]), Some(324));
+    assert_eq!(stdev_ms(&[100, 100, 100]), Some(0));
+    assert_eq!(stdev_ms(&[42]), None);
+}
+
 /// Round 31: `min_ms` / `max_ms` are the
 /// endpoints of the sorted sample vector.
 /// The pre-Round 31 envelope only surfaced

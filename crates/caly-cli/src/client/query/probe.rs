@@ -102,12 +102,7 @@ impl DelayProbe {
     /// 200ms median and 600ms jitter is unreliable
     /// even if the median is in the "fast" tier.
     pub fn jitter_ms(&self) -> Option<u32> {
-        if self.samples.len() < 2 {
-            return None;
-        }
-        let min = *self.samples.first()?;
-        let max = *self.samples.last()?;
-        Some(max - min)
+        jitter_ms(&self.samples)
     }
 
     /// Round 31: minimum of the sorted
@@ -154,40 +149,14 @@ impl DelayProbe {
     /// ~4.29e9 ms (~50 days) which is well
     /// above the operator-relevant range.
     ///
-    /// The `f64` accumulator trades the
-    /// `u64`-mantissa precision for the
-    /// `sqrt` operation (no native integer
-    /// square root); the precision loss is
-    /// acceptable for a `n <= 5` sample count
-    /// (the kernel's `samples` clamp is `[1,
-    /// 5]`) because the per-sample magnitude
-    /// is bounded by the kernel's `5s` probe
-    /// timeout (5_000 ms), well within `f64`'s
-    /// 52-bit mantissa. The `cast_*_lossy`
-    /// allow on the `as` casts documents the
-    /// intentional precision trade.
-    #[allow(
-        clippy::cast_precision_loss,
-        clippy::cast_sign_loss,
-        clippy::cast_possible_truncation
-    )]
+    /// The arithmetic lives in the free [`stdev_ms`]
+    /// helper (shared with the bulk sweep renderer,
+    /// which holds the samples in
+    /// `DelayOutcome::Reachable` rather than in a
+    /// `DelayProbe`); the `cast_*_lossy` allows
+    /// ride along on the helper.
     pub fn stdev_ms(&self) -> Option<u32> {
-        if self.samples.len() < 2 {
-            return None;
-        }
-        let n = self.samples.len() as u64;
-        let sum: u64 = self.samples.iter().map(|s| u64::from(*s)).sum();
-        let mean = sum as f64 / n as f64;
-        let variance = self
-            .samples
-            .iter()
-            .map(|s| {
-                let diff = f64::from(*s) - mean;
-                diff * diff
-            })
-            .sum::<f64>()
-            / n as f64;
-        Some(variance.sqrt().round() as u32)
+        stdev_ms(&self.samples)
     }
 
     /// Raw samples (sorted ascending). Useful for
@@ -202,6 +171,49 @@ impl DelayProbe {
     pub fn url(&self) -> Option<&str> {
         self.url.as_deref()
     }
+}
+
+/// `max - min` of the samples, or `None` when fewer than 2 samples
+/// answered. Shared by [`DelayProbe::jitter_ms`] and the bulk-sweep
+/// renderer (`execute::delay::render`), which holds the samples inside
+/// `DelayOutcome::Reachable` instead of a `DelayProbe`.
+pub(crate) fn jitter_ms(samples: &[u32]) -> Option<u32> {
+    if samples.len() < 2 {
+        return None;
+    }
+    let min = *samples.first()?;
+    let max = *samples.last()?;
+    Some(max - min)
+}
+
+/// Population standard deviation of the samples, rounded to the nearest
+/// `u32` millisecond; `None` for fewer than 2 samples. Shared by
+/// [`DelayProbe::stdev_ms`] and the bulk-sweep renderer (see
+/// [`jitter_ms`] for why the free form exists). The population formula
+/// (divide by `n`, not `n - 1`) and the `f64` accumulator are explained
+/// in the method's doc; the `cast_*_lossy` allows document the
+/// intentional precision trade.
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    clippy::cast_possible_truncation
+)]
+pub(crate) fn stdev_ms(samples: &[u32]) -> Option<u32> {
+    if samples.len() < 2 {
+        return None;
+    }
+    let n = samples.len() as u64;
+    let sum: u64 = samples.iter().map(|s| u64::from(*s)).sum();
+    let mean = sum as f64 / n as f64;
+    let variance = samples
+        .iter()
+        .map(|s| {
+            let diff = f64::from(*s) - mean;
+            diff * diff
+        })
+        .sum::<f64>()
+        / n as f64;
+    Some(variance.sqrt().round() as u32)
 }
 
 /// Returns the median of `samples`. For even counts

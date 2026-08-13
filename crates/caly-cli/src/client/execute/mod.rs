@@ -30,9 +30,9 @@ mod delay;
 pub(super) mod ops;
 mod sys;
 
-pub(super) use delay::execute_delay_all;
-pub(super) use delay::lowest_latency_node;
-pub(crate) use sys::execute_sys_cmd;
+use delay::execute_delay_all;
+use delay::lowest_latency_node;
+pub(super) use sys::execute_sys_cmd;
 
 #[cfg(test)]
 use ops::resolved_core_kind;
@@ -168,7 +168,8 @@ pub(super) fn execute_pick_proxy_group(
     )
 }
 
-/// Executes the configured subscription refresh.///
+/// Executes the configured subscription refresh.
+///
 /// W2-β2b (§4.3): `subscription_id: None` targets every enabled
 /// source (the daemon's all-zero batch id); `force` clears the
 /// cached validators server-side so the fetch is unconditional;
@@ -244,7 +245,7 @@ pub(super) fn execute_reload_config(client: &mut UdsClient, json: bool) -> ExitC
 }
 
 /// Performs the v2 handshake over an established client connection.
-pub(crate) fn handshake(client: &mut UdsClient) -> Result<(), ClientError> {
+pub(super) fn handshake(client: &mut UdsClient) -> Result<(), ClientError> {
     client.handshake(HandshakeRequest {
         client_version: ProtocolVersion::V2_0,
         requested_features: all_features(),
@@ -291,7 +292,7 @@ pub(crate) fn probe_snapshot_with_budget(
 
 /// Connects to the UDS, retrying briefly on `TransportUnavailable` to absorb a
 /// daemon-startup race. Non-transport failures surface immediately.
-pub(crate) fn connect_with_retry(socket: &std::path::Path) -> Result<UdsClient, ClientError> {
+pub(super) fn connect_with_retry(socket: &std::path::Path) -> Result<UdsClient, ClientError> {
     const MAX_ATTEMPTS: u32 = 5;
     const RETRY_MS: u64 = 200;
     let mut last = ClientError::TransportUnavailable;
@@ -331,7 +332,6 @@ pub(crate) fn with_uds_snapshot<F>(on_snapshot: F) -> ExitCode
 where
     F: FnOnce(UdsClient, caly_protocol::protocol::v2::WirePresentationSnapshot) -> ExitCode,
 {
-    use caly_protocol::client::ClientContract;
     use caly_protocol::protocol::v2::WirePresentationSnapshot;
     let socket = std::env::var_os("CALY_SOCKET").map_or_else(
         || caly_platform::paths::AppPaths::from_env().socket_path(),

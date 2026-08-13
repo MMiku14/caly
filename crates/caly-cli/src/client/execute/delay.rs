@@ -1,7 +1,7 @@
 //! Latency probe / sweep / select-by-delay logic.
 //!
-//! Round 23: extracted from `client/execute.rs` so the
-//! 1100+ line `execute.rs` is a 1-page file again
+//! Round 23: extracted from `client/execute/mod.rs` so the
+//! 1100+ line `execute/mod.rs` is a 1-page file again
 //! (S4.1 advisory). The select-by-delay + sweep
 //! pipeline is self-contained: it reads the daemon
 //! snapshot, reconciles against the kernel's
@@ -69,22 +69,10 @@ pub(crate) fn lowest_latency_node(
     let reachable: Vec<(u32, [u8; 16], String)> = rows
         .iter()
         .filter_map(|row| match &row.outcome {
-            DelayOutcome::Reachable { samples, .. } => {
-                row.outcome
-                    .median_ms()
-                    .map(|ms| (ms, row.node_id, row.name.clone()))
-                    .or_else(|| {
-                        // Defensive: an empty
-                        // `Reachable` shouldn't
-                        // happen (the writer
-                        // maps empty to
-                        // `Unreachable`), but the
-                        // contract is "reachable
-                        // has at least one sample".
-                        let _ = samples;
-                        None
-                    })
-            }
+            DelayOutcome::Reachable { .. } => row
+                .outcome
+                .median_ms()
+                .map(|ms| (ms, row.node_id, row.name.clone())),
             _ => None,
         })
         .collect();
@@ -252,12 +240,12 @@ fn checked_run_state(
 /// the sweep helpers to avoid spelling the `dyn KernelControl` type inline).
 type Controller = Box<dyn caly_corectl::contract::KernelControl + Send>;
 
-/// Reconcile the snapshot rows against the kernel's real proxy set before
-/// probing anything: rows absent from the kernel config are marked
-/// `NotInKernel` without probing (a stale/unapplied kernel config surfaces
 /// One probe target: row index, kernel controller name, display name.
 type ProbeTarget = (usize, String, String);
 
+/// Reconcile the snapshot rows against the kernel's real proxy set before
+/// probing anything: rows absent from the kernel config are marked
+/// `NotInKernel` without probing (a stale/unapplied kernel config surfaces
 /// as such instead of a wall of silent 404s). Returns the surviving probe
 /// targets plus the controller, which the caller reuses for probing so the
 /// reconcile socket is not wasted.
@@ -315,11 +303,13 @@ fn sweep_snapshot_delays(
 }
 
 /// Live-probe variant of [`sweep_snapshot_delays`]: an interactive picker
-/// passes a shared `latencies` map (node display name -> median ms) and a
+/// passes a shared `latencies` map (decoded display name -> median ms) and a
 /// `progress` callback (done/total/dead) so the picker's test-header row
 /// and the latency column update while the sweep runs. The plain sweep
 /// keeps its `\r` TTY progress line; the callback variant suppresses it
-/// (the picker renders its own screen).
+/// (the picker renders its own screen). The map keys are the *decoded*
+/// display names (the same form the picker's `LiveItem::name` uses), not
+/// the raw registry tags the controller matches on.
 //
 // `too_many_lines`: the sweep is one dense concurrent block (target
 // reconcile, work queue, scoped workers, result collection); splitting it
@@ -403,7 +393,7 @@ pub(crate) fn sweep_snapshot_delays_with(
                         // `--samples N` from `ping --all` is honoured —
                         // the grammar documents that it trades
                         // wall-clock time for jitter stability.
-                        samples.unwrap_or(3).clamp(1, 5),
+                        super::super::query::resolve_samples(samples),
                     ) {
                         Ok(probe) if probe.is_reachable() => build_reachable_outcome(probe),
                         Ok(_) => DelayOutcome::Unreachable,
@@ -428,7 +418,7 @@ pub(crate) fn sweep_snapshot_delays_with(
                     if let Some(map) = latencies {
                         map.lock()
                             .unwrap_or_else(PoisonError::into_inner)
-                            .insert(display_name, outcome.median_ms());
+                            .insert(output::decode_display_name(&display_name), outcome.median_ms());
                     }
                     match progress {
                         Some(callback) => {

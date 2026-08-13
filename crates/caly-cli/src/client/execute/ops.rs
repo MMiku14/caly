@@ -129,7 +129,6 @@ pub(super) fn execute_core(
 
 /// Reads the daemon snapshot for the runtime active core kind.
 pub(super) fn active_core_kind(client: &mut UdsClient) -> Option<WireCoreKind> {
-    use caly_protocol::client::ClientContract;
     let snapshot = client.snapshot().ok()?;
     WireCoreKind::from_wire(snapshot.applied.core_kind?)
 }
@@ -326,23 +325,31 @@ fn build_start_ping(
 ) -> impl FnMut() {
     let (lat2, ping2) = (latencies, ping);
     move || {
+        // Reset the sweep state synchronously on this (main) thread before
+        // the worker spawns: the picker's Enter handler checks `running`
+        // under the same lock, so a double-Enter can never launch two
+        // sweeps, and the header can never show a previous sweep's totals
+        // as if they belonged to the new one.
+        *ping2.lock().unwrap_or_else(std::sync::PoisonError::into_inner) =
+            crate::client::interact_live::PingState {
+                running: true,
+                done: 0,
+                total: 0,
+                dead: 0,
+                ever_ran: true,
+                failed: false,
+            };
         let lat = lat2.clone();
         let pg = ping2.clone();
         let path = socket.clone();
         std::thread::spawn(move || {
-            *pg.lock().unwrap_or_else(std::sync::PoisonError::into_inner) =
-                crate::client::interact_live::PingState {
-                    running: true,
-                    done: 0,
-                    total: 0,
-                    dead: 0,
-                    ever_ran: true,
-                    failed: false,
-                };
             let Ok(mut probe) = caly_protocol::client::UdsClient::connect(path) else {
-                pg.lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .running = false;
+                // Daemon unreachable: say so honestly (the feature row must
+                // not present `0 unreachable` as a real result).
+                let mut state =
+                    pg.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                state.running = false;
+                state.failed = true;
                 return;
             };
             let sweep = super::delay::sweep_snapshot_delays_with(
@@ -516,5 +523,46 @@ fn terminal_exit_code(state: RawOperationState) -> ExitCode {
         Some(WireOperationState::Completed) => ExitCode::SUCCESS,
         Some(WireOperationState::Failed) | Some(WireOperationState::Cancelled) => ExitCode::from(1),
         _ => ExitCode::from(1), // still running / unknown
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A failed daemon connect in the sweep worker must surface as a
+    /// failed state (honest feature row), never as a fake `0 unreachable`
+    /// result — and `running` must always be cleared so the header can
+    /// never stay stuck on "testing...".
+    #[test]
+    fn start_ping_connect_failure_marks_state_failed() {
+        let ping = std::sync::Arc::new(std::sync::Mutex::new(
+            crate::client::interact_live::PingState::default(),
+        ));
+        let latencies = std::sync::Arc::new(std::sync::Mutex::new(
+            std::collections::HashMap::new(),
+        ));
+        let mut start_ping = build_start_ping(
+            latencies,
+            ping.clone(),
+            std::path::PathBuf::from("/nonexistent/caly-live-test.sock"),
+        );
+        start_ping();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            let state = *ping
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if !state.running || std::time::Instant::now() > deadline {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let state = *ping
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        assert!(!state.running, "worker must clear running on connect failure");
+        assert!(state.failed, "connect failure must mark the sweep failed");
+        assert!(state.ever_ran);
     }
 }

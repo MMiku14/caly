@@ -6,6 +6,7 @@
 //! sorted-by-name ordering and the star / parens annotations.
 
 use super::super::super::hex;
+use super::super::super::query::{jitter_ms, stdev_ms};
 use super::{DelayOutcome, SweepRow};
 
 /// Renders one sweep row as a JSON object. The
@@ -35,10 +36,7 @@ pub(super) fn sweep_row_to_json(row: &SweepRow) -> serde_json::Value {
     let mut value = match &row.outcome {
         DelayOutcome::Reachable { samples, url } => {
             let median = row.outcome.median_ms();
-            let jitter = samples
-                .first()
-                .zip(samples.last())
-                .map_or(0, |(lo, hi)| hi - lo);
+            let jitter = jitter_ms(samples);
             // Round 31: min / max / stdev are
             // derived from the same `samples`
             // vector the JSON envelope
@@ -52,42 +50,25 @@ pub(super) fn sweep_row_to_json(row: &SweepRow) -> serde_json::Value {
             // numbers from `samples`.
             let min_ms = samples.first().copied();
             let max_ms = samples.last().copied();
-            // Round 31: the inline stdev matches
-            // `query::DelayProbe::stdev_ms` but
-            // is duplicated here because the
-            // `SweepRow` shape keeps the samples
-            // inside `DelayOutcome::Reachable`
-            // (not in a `DelayProbe`), so the
-            // helper that lives on `DelayProbe`
-            // is not directly reachable. The
-            // precision-loss allows mirror the
-            // helper's contract: a `n <= 5`
-            // sample count under a `5s` timeout
-            // is well within `f64`'s 52-bit
-            // mantissa, so the `as f64` and
-            // `as u32` casts are the
-            // intentional (documented) trade.
-            #[allow(
-                clippy::cast_precision_loss,
-                clippy::cast_sign_loss,
-                clippy::cast_possible_truncation
-            )]
-            let stdev_ms = if samples.len() >= 2 {
-                let n = samples.len() as u64;
-                let sum: u64 = samples.iter().map(|s| u64::from(*s)).sum();
-                let mean = sum as f64 / n as f64;
-                let variance = samples
-                    .iter()
-                    .map(|s| {
-                        let diff = f64::from(*s) - mean;
-                        diff * diff
-                    })
-                    .sum::<f64>()
-                    / n as f64;
-                Some(variance.sqrt().round() as u32)
-            } else {
-                None
-            };
+            // Round 31: min / max / stdev are
+            // derived from the same `samples`
+            // vector the JSON envelope
+            // already carries. The pre-Round 31
+            // shape had only `median_ms` /
+            // `jitter_ms` / `samples`; the new
+            // shape adds `min_ms` / `max_ms` /
+            // `stdev_ms` so a script consumer
+            // can read the full distribution
+            // shape without re-deriving the
+            // numbers from `samples`. The
+            // spread helpers are the same
+            // free functions `query::DelayProbe`
+            // delegates to (the `SweepRow` shape
+            // keeps the samples inside
+            // `DelayOutcome::Reachable`, not in a
+            // `DelayProbe`, so the methods are
+            // not directly reachable here).
+            let stdev_ms = stdev_ms(samples);
             json!({
                 "id": hex(row.node_id),
                 "name": row.name.as_str(),
@@ -96,7 +77,7 @@ pub(super) fn sweep_row_to_json(row: &SweepRow) -> serde_json::Value {
                 "delay_ms": median,
                 "min_ms": min_ms,
                 "max_ms": max_ms,
-                "jitter_ms": if samples.len() >= 2 { Some(jitter) } else { None },
+                "jitter_ms": jitter,
                 "stdev_ms": stdev_ms,
                 "samples": samples,
                 "url": url,
@@ -198,10 +179,7 @@ pub(super) fn print_delay_sweep(rows: &[SweepRow], json: bool) {
         // `!` — spiky  (jitter > 25% of median)
         // The operator learns at a glance which
         // "fast" nodes are actually reliable.
-        let jitter = samples
-            .first()
-            .zip(samples.last())
-            .map_or(0, |(lo, hi)| hi - lo);
+        let jitter = jitter_ms(samples).unwrap_or(0);
         let glyph = if samples.len() < 2 {
             '.'
         } else if median == 0 {

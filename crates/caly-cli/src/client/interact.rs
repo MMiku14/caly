@@ -120,7 +120,10 @@ fn index_of(labels: &[String], label: &str) -> usize {
     labels
         .iter()
         .position(|candidate| candidate == label)
-        .expect("picker returned a label from the offered list")
+        // Unreachable in practice (inquire only returns offered labels);
+        // fall back to the first entry rather than panic under
+        // `-D clippy::expect-used`.
+        .unwrap_or(0)
 }
 
 /// How a free-text prompt ended (W2-β2a, `sub add` interactive

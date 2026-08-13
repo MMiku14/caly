@@ -75,14 +75,10 @@ pub(crate) fn pick_live(
     };
     let window = super::interact::picker_window();
     let mut selected = 0usize;
-    let mut first = true;
     loop {
         // Scroll the selection into the window.
         let offset = selected.saturating_sub(window.saturating_sub(1));
-        render(
-            term, entries, ping, latencies, selected, offset, window, first,
-        )?;
-        first = false;
+        render(term, entries, ping, latencies, selected, offset, window)?;
         if crossterm::event::poll(Duration::from_millis(150))?
             && let Event::Key(KeyEvent {
                 code, modifiers, ..
@@ -151,7 +147,13 @@ impl Drop for RawModeGuard {
 }
 
 /// Renders the feature row + the visible window of entries at the terminal
-/// origin. Full overwrite (no clear) so the screen does not flicker.
+/// origin. Every frame is a full redraw of the window rows: each row is
+/// cleared and rewritten in place, so there is no clear-frame flicker, and
+/// the cost (~40 rows of escape sequences at most) is negligible against
+/// the 150 ms poll interval. An incremental redraw (diffing only the
+/// latency column / selection bar) would need per-frame state tracking
+/// and risks stale-row bugs when the selection scrolls mid-sweep; the
+/// full redraw is the right trade here.
 fn render(
     term: &Term,
     entries: &[LiveItem],
@@ -160,7 +162,6 @@ fn render(
     selected: usize,
     offset: usize,
     window: usize,
-    first: bool,
 ) -> io::Result<()> {
     let state = *ping
         .lock()
@@ -169,12 +170,10 @@ fn render(
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let rows = 1 + window.min(entries.len().max(1));
-    let top = if first { 0 } else { rows.saturating_sub(1) };
-    let _ = term.move_cursor_to(0, top);
     let mut line = 0;
     // Feature row (index 0 of the picker).
     let feature = ping_feature_row(&state, entries.len());
-    write_row(term, line, selected == 0, &feature, true)?;
+    write_row(term, line, selected == 0, &feature)?;
     line += 1;
     // Visible entries.
     let mut index = offset;
@@ -185,7 +184,7 @@ fn render(
             lat.get(&item.name).copied().flatten(),
         );
         let row = live_row(&item.protocol, &item.name, latency);
-        write_row(term, line, selected == index + 1, &row, false)?;
+        write_row(term, line, selected == index + 1, &row)?;
         index += 1;
         line += 1;
     }
@@ -195,8 +194,6 @@ fn render(
         let _ = term.write_line("");
         line += 1;
     }
-    // Keep the selection inside the window while scrolling.
-    let _ = (selected, offset, window, entries.len());
     Ok(())
 }
 
@@ -207,7 +204,6 @@ fn write_row(
     line: usize,
     highlighted: bool,
     text: &str,
-    feature: bool,
 ) -> io::Result<()> {
     let _ = term.move_cursor_to(0, line);
     term.clear_line()?;
@@ -217,15 +213,6 @@ fn write_row(
     } else {
         term.write_line(text)
     }
-    .map_err(|error| {
-        if feature {
-            // A feature-row write failing is not fatal for scrolling
-            // pickers; degrade to plain text.
-            io::Error::other(error.to_string())
-        } else {
-            io::Error::other(error.to_string())
-        }
-    })
 }
 
 /// The test-header row: idle prompt, live progress, or done summary.
