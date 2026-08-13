@@ -139,3 +139,15 @@ impl SingBoxRuntime {
         }))
     }
 }
+
+/// Abnormal-exit safety net, mirroring `MihomoRuntime`: a panicking test
+/// or SIGKILLed harness must not leave the kernel tree orphaned. Normal
+/// `stop()` already takes the tree, so this only fires on error paths;
+/// a failed reap is deliberately swallowed (Drop cannot report errors).
+impl Drop for SingBoxRuntime {
+    fn drop(&mut self) {
+        if let Some(mut tree) = self.tree.take() {
+            let _ = stop_and_reap(&mut tree, Duration::from_secs(5));
+        }
+    }
+}

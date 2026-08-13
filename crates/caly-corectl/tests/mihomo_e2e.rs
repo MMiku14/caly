@@ -255,8 +255,23 @@ fn e2e_lock() -> E2eLockGuard {
                         .is_ok_and(|status| status.success())
                 });
                 if !holder_alive {
-                    let _ = std::fs::remove_dir_all(&path);
-                    continue;
+                    // A missing/unparseable pid does NOT mean the holder is
+                    // dead: the lock directory is created before the pid is
+                    // written, so a waiter polling in that window would
+                    // steal the lock from a live holder (e2e-lock takeover
+                    // race, see daemon_mock_e2e). Only take over a stale
+                    // directory whose pid has been absent for seconds.
+                    let stale = std::fs::metadata(&path)
+                        .and_then(|m| m.modified())
+                        .map(|t| {
+                            t.elapsed()
+                                .is_ok_and(|age| age > std::time::Duration::from_secs(5))
+                        })
+                        .unwrap_or(true);
+                    if stale {
+                        let _ = std::fs::remove_dir_all(&path);
+                        continue;
+                    }
                 }
                 if std::time::Instant::now() > deadline {
                     panic!("timed out waiting for the e2e suite lock");

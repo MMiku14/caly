@@ -172,7 +172,8 @@ fn run_core(_root: &Path, core: &str, binary: &Path, runtime: &Path) -> Result<(
     // port instead of trusting the "practically impossible" assumption.
     for attempt in 1..=3 {
         let controller_port = alloc_port()?;
-        match run_core_once(core, binary, controller_port, runtime) {
+        let mixed_port = alloc_port()?;
+        match run_core_once(core, binary, controller_port, mixed_port, runtime) {
             Ok(()) => return Ok(()),
             Err(error) if attempt < 3 && error.contains("did not become ready") => {
                 eprintln!("port {controller_port} contested (attempt {attempt}/3); retrying");
@@ -187,6 +188,7 @@ fn run_core_once(
     core: &str,
     binary: &Path,
     controller_port: u16,
+    mixed_port: u16,
     runtime: &Path,
 ) -> Result<(), String> {
     fs::create_dir_all(runtime).map_err(|error| error.to_string())?;
@@ -201,6 +203,10 @@ fn run_core_once(
         .env("CALY_CORE", core)
         .env("CALY_LOCK", &lock)
         .env("CALY_MIHOMO_DIR", &workdir)
+        // Ephemeral mixed port (product override, see caly-cli::config
+        // kernel_from_config): the real kernel binds it, so a fixed 7890
+        // would race with any other daemon on this host.
+        .env("CALY_MIXED_PORT", &mixed_port.to_string())
         .env("XDG_RUNTIME_DIR", runtime)
         .env("XDG_STATE_HOME", runtime.join("state"))
         .env("XDG_CONFIG_HOME", runtime.join("config"))

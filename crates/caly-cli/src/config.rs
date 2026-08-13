@@ -237,9 +237,17 @@ pub fn kernel_from(root: PathBuf) -> caly_profile::schema::KernelConfig {
 }
 
 pub fn kernel_from_config(config: Option<&AppConfig>) -> KernelConfig {
-    config
+    let mut kernel = config
         .as_ref()
-        .map_or_else(KernelConfig::default, |config| config.kernel.clone())
+        .map_or_else(KernelConfig::default, |config| config.kernel.clone());
+    // e2e isolation / operator override: `CALY_MIXED_PORT` env wins over
+    // the config value, mirroring the controller env overrides — lets test
+    // suites bind an ephemeral mixed port instead of racing for the fixed
+    // 7890 (see daemon_mock_e2e). Invalid values are ignored (config wins).
+    if let Ok(port) = std::env::var("CALY_MIXED_PORT") {
+        kernel.mixed_port = port.parse().unwrap_or(kernel.mixed_port);
+    }
+    kernel
 }
 
 pub fn sniffer_from_config(config: Option<&AppConfig>) -> SnifferConfig {

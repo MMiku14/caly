@@ -120,7 +120,6 @@ where
         stop_and_reap(&mut tree, timeout)
             .map_err(|failure| MihomoRuntimeError::Stop(platform_from_stop(failure)))
     }
-
     /// Stops the current generation, then starts the requested generation.
     pub fn restart(
         &mut self,
@@ -157,6 +156,19 @@ where
     /// Returns the current generation, if running.
     pub const fn generation(&self) -> Option<u64> {
         self.generation
+    }
+}
+
+/// Abnormal-exit safety net: a panicking test (or a harness SIGKILLing
+/// the parent) previously left the kernel tree orphaned — e2e runs
+/// found 33-minute-old mihomo processes still holding ports. Normal
+/// `stop()` already takes the tree, so this only fires on error paths;
+/// a failed reap is deliberately swallowed (Drop cannot report errors).
+impl<S: ProcessSpawner, C> Drop for MihomoRuntime<S, C> {
+    fn drop(&mut self) {
+        if let Some(mut tree) = self.tree.take() {
+            let _ = stop_and_reap(&mut tree, Duration::from_secs(5));
+        }
     }
 }
 

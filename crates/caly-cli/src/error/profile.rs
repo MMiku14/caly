@@ -36,7 +36,10 @@ pub fn from_cmd_error(error: &crate::client::profile::ProfileCmdError, command: 
             "profile.invalid_id",
             format!("profile id `{id}` is not path-safe ASCII"),
         ),
-        E::InvalidSource(spec) => ("profile.invalid_source", format!("source spec `{spec}` is invalid")),
+        E::InvalidSource(spec) => (
+            "profile.invalid_source",
+            format!("source spec `{spec}` is invalid"),
+        ),
         E::ReadConfig(reason) => ("profile.read_config", format!("read config: {reason}")),
         E::ParseConfig(reason) => ("profile.parse_config", format!("parse config: {reason}")),
         E::Store(reason) => ("profile.store", format!("profile store: {reason}")),
