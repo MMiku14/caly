@@ -6,6 +6,9 @@ use caly_platform::paths::{AppPaths, SafeName};
 use caly_ports::{ActorFailure, RefreshOutcome, SubscriptionCommandBackend};
 use caly_profile::loader::{LayeredConfigPaths, LoaderLimits, load_layered_yaml_strict};
 use caly_subscription::net::{prefer_public_addresses, resolve_host_with_retry};
+/// P8b: intake-domain function moved up to `caly_subscription::id`;
+/// re-exported here so adapter internals keep their call sites.
+use caly_subscription::subscription_id_for_url;
 use caly_subscription::{
     FetchPolicy, FetchResult, FetchValidators, ResolvedAddresses, fetch_pinned,
 };
@@ -556,25 +559,6 @@ struct ResolvedSource {
     id: SubscriptionId,
     url: String,
     every_minutes: Option<u64>,
-}
-
-/// Stable 16-byte `SubscriptionId` from a source URL digest.
-///
-/// Audit #120: hash the *normalised* URL — `url::Url` parsing lowercases
-/// scheme/host, strips a redundant default port and the empty-path
-/// distinction, so equivalent spellings of one source share the id/cache
-/// entry instead of fragmenting validators and cached bodies across
-/// duplicates.
-pub fn subscription_id_for_url(url: &str) -> SubscriptionId {
-    use sha2::{Digest, Sha256};
-    let normalized =
-        url::Url::parse(url).map_or_else(|_| url.to_owned(), |parsed| parsed.to_string());
-    let mut hasher = Sha256::new();
-    hasher.update(normalized.as_bytes());
-    let digest = hasher.finalize();
-    let mut bytes = [0_u8; 16];
-    bytes.copy_from_slice(&digest[..16]);
-    SubscriptionId::from_bytes(bytes)
 }
 
 #[cfg(test)]

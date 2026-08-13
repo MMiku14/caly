@@ -308,7 +308,7 @@ pub(crate) fn declared_groups(
         subscription_urls.push(legacy);
     }
     for url in subscription_urls {
-        let id = caly_backends::subscription::subscription_id_for_url(url);
+        let id = caly_subscription::subscription_id_for_url(url);
         let body_path = paths
             .state
             .join("subscriptions")

@@ -69,22 +69,8 @@ fn niri_env_path() -> Result<PathBuf, ActorFailure> {
 ///
 /// The session file is caly-owned; its presence with a parseable export means
 /// a manual proxy endpoint was active. Unreadable state degrades to `none`.
-pub(crate) fn capture() -> (String, String) {
-    let Ok(path) = niri_env_path() else {
-        return ("none".to_owned(), String::new());
-    };
-    let Ok(contents) = std::fs::read_to_string(&path) else {
-        return ("none".to_owned(), String::new());
-    };
-    match parse_niri_endpoint(&contents) {
-        Some(endpoint) => ("manual".to_owned(), endpoint),
-        None => ("none".to_owned(), String::new()),
-    }
-}
 
-/// Restores a previously captured niri proxy state via the session file.
-///
-/// `manual` without a usable endpoint degrades to unsetting the variables.
+
 pub(crate) fn restore(endpoint: &str, manual: bool) -> Result<(), ActorFailure> {
     let contents = if manual && !endpoint.is_empty() {
         manual_environment_contents(endpoint)
@@ -102,22 +88,6 @@ pub(crate) fn manual_environment_contents(endpoint: &str) -> String {
         let _ = writeln!(lines, "export {var}=\"{url}\"");
     }
     lines
-}
-
-/// Extracts the exported `http_proxy` endpoint from session file contents.
-pub(crate) fn parse_niri_endpoint(contents: &str) -> Option<String> {
-    for line in contents.lines() {
-        let trimmed = line.trim();
-        let Some(rest) = trimmed.strip_prefix("export http_proxy=") else {
-            continue;
-        };
-        let unquoted = rest.trim().trim_matches('"');
-        let stripped = unquoted.strip_prefix("http://").unwrap_or(unquoted);
-        if !stripped.is_empty() {
-            return Some(stripped.to_owned());
-        }
-    }
-    None
 }
 
 #[cfg(test)]
@@ -142,20 +112,10 @@ mod tests {
     }
 
     #[test]
-    fn parse_niri_endpoint_reads_exported_endpoint() {
-        let contents = proxy_environment_contents("127.0.0.1", 7890, true);
-        assert_eq!(
-            parse_niri_endpoint(&contents).as_deref(),
-            Some("127.0.0.1:7890")
-        );
-    }
+
 
     #[test]
-    fn parse_niri_endpoint_ignores_unset_files() {
-        let contents = proxy_environment_contents("127.0.0.1", 7890, false);
-        assert_eq!(parse_niri_endpoint(&contents), None);
-        assert_eq!(parse_niri_endpoint(""), None);
-    }
+
 
     #[test]
     fn manual_environment_uses_captured_endpoint() {

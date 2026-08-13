@@ -15,5 +15,5 @@ fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     // `caly daemon` (the bare host command) is dispatched back here by the
     // presentation layer (caly-cli); every other command runs inside it.
-    caly_cli::run(args, |options| commands::daemon::run(options))
+    caly_cli::run(args, commands::daemon::run)
 }

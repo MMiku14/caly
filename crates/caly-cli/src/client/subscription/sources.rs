@@ -230,7 +230,7 @@ pub fn resolve_source_ref(paths: &AppPaths, token: &str) -> Result<String, SubCm
 /// cleared it), an IO failure warns on stderr without turning a
 /// successful config write into a failure.
 fn purge_cached_body(paths: &AppPaths, url: &str) {
-    let id = caly_backends::subscription::subscription_id_for_url(url);
+    let id = caly_subscription::subscription_id_for_url(url);
     let hex = crate::client::hex(id.into_bytes());
     let dir = paths.state.join("subscriptions");
     for candidate in [dir.join(&hex), dir.join(format!("{hex}.tmp"))] {

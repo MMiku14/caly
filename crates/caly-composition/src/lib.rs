@@ -6,7 +6,6 @@
 #![forbid(unsafe_code)]
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))] // #53: tests assert with unwrap/expect/panic; production lint stays deny
 
-use std::path::PathBuf;
 
 use caly_domain::DaemonInstanceId;
 
@@ -23,11 +22,9 @@ use caly_application::{
 ///
 /// Resolution precedence is: explicit daemon CLI flag, configuration file,
 /// environment variable, then the packaged `vendor/bin` fallback.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct CoreBinaryPaths {
-    pub mihomo: Option<PathBuf>,
-    pub sing_box: Option<PathBuf>,
-}
+/// (P8b: definition moved down to `caly-platform::paths`; this use keeps
+/// the assembly root's internal references unchanged.)
+use caly_platform::paths::CoreBinaryPaths;
 
 mod tuning;
 

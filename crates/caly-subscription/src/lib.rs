@@ -17,6 +17,7 @@ mod clash;
 mod classifier;
 mod format;
 mod http;
+mod id;
 pub mod net;
 mod normalize;
 mod pipeline;
@@ -38,6 +39,7 @@ pub use format::{
     SubscriptionFormat, SubscriptionLine, SubscriptionLines, decode_document,
 };
 pub use http::{FetchError, FetchResult, FetchValidators, fetch_pinned};
+pub use id::subscription_id_for_url;
 pub use normalize::{NormalizeError, derive_tags, normalize_display_name};
 pub use pipeline::{
     DedupeResult, NodeIds, PipelineError, SubscriptionDiff, SubscriptionNodes,

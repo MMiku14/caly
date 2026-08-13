@@ -266,3 +266,15 @@ mod tests {
         );
     }
 }
+
+/// Optional executable overrides for managed proxy cores.
+///
+/// Resolution precedence is: explicit daemon CLI flag, configuration file,
+/// environment variable, then the packaged `vendor/bin` fallback.
+/// (P8b: moved down from `caly-composition` — path model belongs with
+/// the platform's path ownership, not the assembly root.)
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct CoreBinaryPaths {
+    pub mihomo: Option<PathBuf>,
+    pub sing_box: Option<PathBuf>,
+}

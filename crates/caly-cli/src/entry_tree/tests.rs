@@ -590,7 +590,7 @@ fn declared_groups_include_cached_subscription_groups() {
     )
     .unwrap();
     let body = "proxies:\n  - name: hk-01\n    type: vmess\n    server: a.example.com\n    port: 443\n    uuid: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa\n    alterId: 0\n    cipher: auto\nproxy-groups:\n  - name: \u{81ea}\u{52a8}\u{9009}\u{62e9}\n    type: url-test\n    proxies: [hk-01]\nrules:\n  - MATCH,\u{81ea}\u{52a8}\u{9009}\u{62e9}\n";
-    let id = caly_backends::subscription::subscription_id_for_url(source_url);
+    let id = caly_subscription::subscription_id_for_url(source_url);
     let cache_dir = paths.state.join("subscriptions");
     std::fs::create_dir_all(&cache_dir).unwrap();
     std::fs::write(

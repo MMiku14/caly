@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))] // #53: tests assert with unwrap/expect/panic; production lint stays deny
 pub mod command;
+pub mod desktop;
 pub mod entropy;
 mod error;
 pub mod fs;

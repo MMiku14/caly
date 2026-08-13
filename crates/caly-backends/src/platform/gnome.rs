@@ -85,61 +85,6 @@ pub(crate) fn apply_pac<R: CommandRunner>(runner: &mut R, url: &str) -> Result<(
 /// `("unknown", "")`, never `none` — the pre-fix shape let a transient
 /// gsettings failure silently erase the recorded proxy state, and the
 /// subsequent restore then actively disabled a proxy we never observed.
-pub(crate) fn capture<R: CommandRunner>(runner: &mut R) -> (String, String) {
-    let Some(mode) = run(runner, &["get", "org.gnome.system.proxy", "mode"])
-        .ok()
-        .and_then(|result| parse_gsettings_value(stdout_text(&result)))
-    else {
-        return ("unknown".to_owned(), String::new());
-    };
-    if mode == "auto" {
-        let pac_url = run(runner, &["get", "org.gnome.system.proxy", "autoconfig-url"])
-            .ok()
-            .and_then(|result| parse_gsettings_value(stdout_text(&result)))
-            .unwrap_or_default();
-        return (mode, pac_url);
-    }
-    if mode != "manual" {
-        return (mode, String::new());
-    }
-    let host = run(runner, &["get", "org.gnome.system.proxy.http", "host"])
-        .ok()
-        .and_then(|result| parse_gsettings_value(stdout_text(&result)))
-        .unwrap_or_default();
-    if host.is_empty() {
-        return (mode, String::new());
-    }
-    // Some tools (including earlier caly versions) store a combined
-    // `host:port` in the host key; accept it directly when well-formed.
-    if endpoint_port(&host).is_some() {
-        return (mode, host);
-    }
-    let port = run(runner, &["get", "org.gnome.system.proxy.http", "port"])
-        .ok()
-        .and_then(|result| parse_gsettings_u32(stdout_text(&result)));
-    let Some(port) = port else {
-        return (mode, String::new());
-    };
-    (mode, format!("{host}:{port}"))
-}
-
-/// Parses a `gsettings get` numeric value, tolerating the `uint32 ` prefix.
-pub(crate) fn parse_gsettings_u32(raw: &str) -> Option<u16> {
-    let trimmed = raw.trim();
-    let digits = trimmed.strip_prefix("uint32 ").unwrap_or(trimmed);
-    digits.parse::<u16>().ok()
-}
-
-/// The trailing port of a `host:port` endpoint, when well-formed.
-///
-/// Audit #94: bracket-aware — `[::1]:7890` yields `7890`; a bare IPv6
-/// literal has no port separator semantics and yields `None` (the old
-/// `rfind(':')` read `::1` as host `::` / port `1`).
-fn endpoint_port(endpoint: &str) -> Option<u16> {
-    let (_host, port) = split_endpoint_parts(endpoint);
-    port?.parse::<u16>().ok()
-}
-
 /// Restores a previously captured GNOME proxy state.
 ///
 /// `manual` without a usable endpoint degrades to disabling the proxy: an
@@ -216,17 +161,6 @@ fn split_endpoint_parts(endpoint: &str) -> (&str, Option<&str>) {
 }
 
 /// Decodes the bounded stdout bytes of a command result as UTF-8.
-fn stdout_text(result: &CommandResult) -> &str {
-    std::str::from_utf8(result.stdout.as_slice()).unwrap_or_default()
-}
-
-/// Parses one `gsettings get` value, stripping the surrounding single quotes.
-pub(crate) fn parse_gsettings_value(raw: &str) -> Option<String> {
-    let trimmed = raw.trim();
-    let unquoted = trimmed.strip_prefix('\'')?.strip_suffix('\'')?;
-    Some(unquoted.to_owned())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -282,21 +216,10 @@ mod tests {
     }
 
     #[test]
-    fn parse_gsettings_value_strips_quotes() {
-        assert_eq!(
-            parse_gsettings_value("'manual'\n").as_deref(),
-            Some("manual")
-        );
-        assert_eq!(parse_gsettings_value("").as_deref(), None);
-        assert_eq!(parse_gsettings_value("manual").as_deref(), None);
-    }
+
 
     #[test]
-    fn parse_gsettings_u32_tolerates_type_prefix() {
-        assert_eq!(parse_gsettings_u32("uint32 3128"), Some(3128));
-        assert_eq!(parse_gsettings_u32("3128\n"), Some(3128));
-        assert_eq!(parse_gsettings_u32("not-a-port"), None);
-    }
+
 
     #[test]
     fn split_endpoint_separates_host_and_port() {
@@ -308,34 +231,13 @@ mod tests {
     }
 
     #[test]
-    fn capture_reads_split_host_and_port_keys() {
-        let mut runner = ScriptedRunner {
-            outputs: ["'manual'", "'10.0.0.1'", "uint32 3128"].into(),
-        };
-        assert_eq!(
-            capture(&mut runner),
-            ("manual".into(), "10.0.0.1:3128".into())
-        );
-    }
+
 
     #[test]
-    fn capture_accepts_combined_host_port_value() {
-        let mut runner = ScriptedRunner {
-            outputs: ["'manual'", "'10.0.0.1:3128'"].into(),
-        };
-        assert_eq!(
-            capture(&mut runner),
-            ("manual".into(), "10.0.0.1:3128".into())
-        );
-    }
+
 
     #[test]
-    fn capture_none_mode_has_no_endpoint() {
-        let mut runner = ScriptedRunner {
-            outputs: ["'none'"].into(),
-        };
-        assert_eq!(capture(&mut runner), ("none".into(), String::new()));
-    }
+
 
     #[test]
     fn apply_enabled_writes_split_host_and_port_keys() -> Result<(), ActorFailure> {
@@ -428,10 +330,7 @@ mod tests {
         assert_eq!(split_endpoint("2001:db8::5"), ("2001:db8::5", "0"));
         assert_eq!(split_endpoint("127.0.0.1:7890"), ("127.0.0.1", "7890"));
         assert_eq!(split_endpoint("proxy.lan"), ("proxy.lan", "0"));
-        assert_eq!(endpoint_port("[::1]:7890"), Some(7890));
-        assert_eq!(endpoint_port("::1"), None);
-        assert_eq!(endpoint_port("127.0.0.1:7890"), Some(7890));
-    }
+                            }
 
     #[test]
     fn restore_auto_sets_auto_mode() -> Result<(), ActorFailure> {
@@ -468,23 +367,10 @@ mod pac_tests {
     }
 
     #[test]
-    fn capture_auto_mode_reads_the_pac_url() {
-        let mut runner = ScriptedRunner {
-            outputs: ["'auto'", "'file:///tmp/caly/proxy.pac'"].into(),
-        };
-        assert_eq!(
-            capture(&mut runner),
-            ("auto".into(), "file:///tmp/caly/proxy.pac".into())
-        );
-    }
+
 
     #[test]
-    fn capture_auto_without_url_keeps_empty_endpoint() {
-        let mut runner = ScriptedRunner {
-            outputs: ["'auto'", "''"].into(),
-        };
-        assert_eq!(capture(&mut runner), ("auto".into(), String::new()));
-    }
+
 
     /// Restoring a captured `auto` mode re-applies the mode without
     /// touching the endpoint (the PAC URL is untouched by caly).
@@ -504,15 +390,7 @@ mod pac_tests {
     }
 
     #[test]
-    fn capture_unreadable_mode_degrades_to_unknown() {
-        // Audit #114: a failing gsettings mode read must not masquerade as
-        // `none` — the pre-fix shape silently erased the recorded state and
-        // the restore then actively disabled a proxy caly never observed.
-        let mut runner = ScriptedRunner {
-            outputs: std::collections::VecDeque::new(),
-        };
-        assert_eq!(capture(&mut runner), ("unknown".into(), String::new()));
-    }
+
 
     #[test]
     fn restore_unknown_never_touches_gsettings() -> Result<(), ActorFailure> {

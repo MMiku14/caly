@@ -583,7 +583,7 @@ fn offline_cache_stats(url: &str) -> (usize, Vec<String>, Option<u64>, bool) {
     let root = caly_platform::paths::AppPaths::from_env()
         .state
         .join("subscriptions");
-    let id = caly_backends::subscription::subscription_id_for_url(url);
+    let id = caly_subscription::subscription_id_for_url(url);
     let path = root.join(caly_domain::to_hex(id.into_bytes()));
     let Ok(metadata) = std::fs::metadata(&path) else {
         return (0, Vec::new(), None, false);

@@ -5,7 +5,8 @@ mod http;
 pub mod render_compose;
 
 pub use cached::CachedSubscriptionBackend;
-pub use http::{HttpSubscriptionBackend, subscription_id_for_url};
+pub use http::HttpSubscriptionBackend;
+pub use caly_subscription::subscription_id_for_url;
 
 pub(crate) use caly_subscription::PublicAddressClassifier;
 

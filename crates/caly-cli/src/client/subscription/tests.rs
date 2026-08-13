@@ -687,7 +687,7 @@ fn remove_source_purge_deletes_the_cached_body() {
     )
     .unwrap();
     // Forge the daemon-side cache entry the way the backend names it.
-    let id = caly_backends::subscription::subscription_id_for_url("https://a.example.com/sub");
+    let id = caly_subscription::subscription_id_for_url("https://a.example.com/sub");
     let hex = crate::client::hex(id.into_bytes());
     let cache_dir = paths.state.join("subscriptions");
     fs::create_dir_all(&cache_dir).unwrap();

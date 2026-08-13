@@ -43,51 +43,10 @@ pub(crate) fn apply_kde_proxy<R: CommandRunner>(
     reload_kio(runner)
 }
 
-/// The `kreadconfig` tool matching the running KDE major version.
-pub(crate) fn kreadconfig_tool() -> PathBuf {
-    if std::env::var("KDE_SESSION_VERSION").as_deref() == Ok("6") {
-        PathBuf::from("kreadconfig6")
-    } else {
-        PathBuf::from("kreadconfig5")
-    }
-}
-
-/// Captures the current KDE proxy state as `(mode, endpoint)`.
 ///
 /// KDE `ProxyType` values: 0 = no proxy, 1 = manual, 2 = automatic (PAC).
 /// The endpoint is the `httpProxy` URL with its scheme stripped, and is only
 /// meaningful for manual mode. Unreadable state degrades to `("none", "")`.
-pub(crate) fn capture<R: CommandRunner>(runner: &mut R) -> (String, String) {
-    let tool = kreadconfig_tool();
-    // Audit #114: an UNREADABLE `ProxyType` (kreadconfig missing, KIO down,
-    // transient failure) is `unknown`, not `none` — the pre-fix shape let a
-    // probe failure masquerade as "no proxy", and the shutdown restore then
-    // wrote `ProxyType=0` over the operator's genuine manual configuration.
-    let Some(raw) = read_key(runner, &tool, "ProxyType") else {
-        return ("unknown".to_owned(), String::new());
-    };
-    match raw.trim() {
-        "1" => {
-            // Audit #114 (endpoint arm): an unreadable `httpProxy` in a
-            // confirmed manual config must not masquerade as an empty
-            // endpoint — the pre-fix shape degraded to `("manual", "")` and
-            // the restore then wrote `ProxyType=0`, clobbering the operator's
-            // observed manual configuration. Same unknown treatment as the
-            // `ProxyType` read failure.
-            let Some(http_proxy) = read_key(runner, &tool, "httpProxy") else {
-                return ("unknown".to_owned(), String::new());
-            };
-            ("manual".to_owned(), strip_http_scheme(http_proxy.trim()))
-        }
-        "2" => ("auto".to_owned(), String::new()),
-        _ => ("none".to_owned(), String::new()),
-    }
-}
-
-/// Restores a previously captured KDE proxy state and reloads KIO.
-///
-/// `manual` without a usable endpoint degrades to disabling the proxy: an
-/// unknown manual endpoint must not be replaced with a guess.
 pub(crate) fn restore<R: CommandRunner>(
     runner: &mut R,
     mode: &str,
@@ -129,31 +88,6 @@ fn reload_kio<R: CommandRunner>(runner: &mut R) -> Result<(), ActorFailure> {
     super::run_ok(runner, reload).map(|_| ())
 }
 
-/// Reads one `kioslaverc` key; missing keys and failures yield `None`.
-fn read_key<R: CommandRunner>(runner: &mut R, tool: &std::path::Path, key: &str) -> Option<String> {
-    let request = CommandRequest {
-        executable: tool.to_path_buf(),
-        arguments: crate::platform::argv(&[PROXY_GROUP, &["--key", key]]).ok()?,
-        timeout: std::time::Duration::from_secs(2),
-    };
-    Some(
-        std::str::from_utf8(super::run_ok(runner, request).ok()?.stdout.as_slice())
-            .unwrap_or_default()
-            .trim()
-            .to_owned(),
-    )
-}
-
-/// Strips an `http://` or `https://` scheme prefix from a proxy URL.
-pub(crate) fn strip_http_scheme(value: &str) -> String {
-    let trimmed = value.trim();
-    let stripped = trimmed
-        .strip_prefix("http://")
-        .or_else(|| trimmed.strip_prefix("https://"))
-        .unwrap_or(trimmed);
-    stripped.trim_end_matches('/').to_owned()
-}
-
 fn write_key<R: CommandRunner>(
     runner: &mut R,
     tool: &std::path::Path,
@@ -169,6 +103,9 @@ fn write_key<R: CommandRunner>(
     super::run_ok(runner, request).map(|_| ())
 }
 
+
+
+/// Reads one `kioslaverc` key; missing keys and failures yield `None`.
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -265,50 +202,16 @@ mod tests {
     }
 
     #[test]
-    fn capture_manual_strips_http_scheme() {
-        let mut runner = ScriptedRunner {
-            outputs: ["1", "http://10.0.0.1:8080"].into(),
-            exit_codes: std::collections::VecDeque::new(),
-        };
-        assert_eq!(
-            capture(&mut runner),
-            ("manual".into(), "10.0.0.1:8080".into())
-        );
-    }
+
 
     #[test]
-    fn capture_manual_with_unreadable_http_proxy_is_unknown() {
-        // Audit #114 (endpoint arm): a confirmed manual config whose
-        // httpProxy read *fails* must degrade to `unknown`, never
-        // `("manual", "")` — the pre-fix shape let the shutdown restore
-        // write `ProxyType=0` over the operator's observed manual proxy.
-        let mut runner = ScriptedRunner {
-            outputs: ["1", ""].into(),
-            exit_codes: [Some(0), Some(1)].into(),
-        };
-        assert_eq!(capture(&mut runner), ("unknown".into(), String::new()));
-    }
+
 
     #[test]
-    fn capture_auto_and_none_modes() {
-        let mut runner = ScriptedRunner {
-            outputs: ["2"].into(),
-            exit_codes: std::collections::VecDeque::new(),
-        };
-        assert_eq!(capture(&mut runner), ("auto".into(), String::new()));
-        let mut runner = ScriptedRunner {
-            outputs: ["0"].into(),
-            exit_codes: std::collections::VecDeque::new(),
-        };
-        assert_eq!(capture(&mut runner), ("none".into(), String::new()));
-    }
+
 
     #[test]
-    fn strip_http_scheme_handles_prefixes_and_slashes() {
-        assert_eq!(strip_http_scheme("http://10.0.0.1:8080/"), "10.0.0.1:8080");
-        assert_eq!(strip_http_scheme("https://example:443"), "example:443");
-        assert_eq!(strip_http_scheme("10.0.0.1:8080"), "10.0.0.1:8080");
-    }
+
 
     #[test]
     fn restore_manual_writes_endpoint_and_reloads() -> Result<(), ActorFailure> {

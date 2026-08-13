@@ -63,8 +63,10 @@ max_dependents = 3
 [budgets.caly-platform]
 # P4 摘除 dns_probe(迁入 caly-dns;UDP probe 归 capability crate,M12);
 # 4539 + ~5% → 4770。后续系统代理/平台能力面扩展,实测 4864 + ~5% → 5110。
-max_loc = 5110
-max_dependents = 8
+# P8b:桌面代理读面(detect + gnome/kde/niri capture)上移,实测 5316
+# + ~5% → 5580。dependents +1(caly-cli 消费探测面)。
+max_loc = 5580
+max_dependents = 9
 
 [budgets.caly-corectl]
 # P1a 已改名(原 caly-kernel);P3a 渲染半边迁 caly-coreconf 后收紧(4100 → 2650)。

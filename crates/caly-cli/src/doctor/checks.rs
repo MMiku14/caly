@@ -13,7 +13,7 @@ use std::{
     process::{Command, Stdio},
 };
 
-use caly_backends::platform::detect_desktop_mode;
+use caly_platform::desktop::detect_desktop_mode;
 use caly_platform::{paths::AppPaths, uds::validate_uds_path};
 
 use super::{DoctorDetail, DoctorResult, bundled_core_binary, is_executable};
@@ -139,7 +139,7 @@ fn check_uds_safety(socket: &Path) -> DoctorResult {
 fn check_desktop_proxy() -> DoctorResult {
     let mode = detect_desktop_mode();
     let mode_name = format!("{mode:?}");
-    let supported = !matches!(mode, caly_backends::platform::DesktopProxyMode::Unsupported);
+    let supported = !matches!(mode, caly_platform::desktop::DesktopProxyMode::Unsupported);
     let result = if supported {
         DoctorResult::ok(
             "system-proxy",

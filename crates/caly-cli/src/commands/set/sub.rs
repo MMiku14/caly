@@ -410,7 +410,7 @@ fn refresh_leaf_dispatch(
         None => None,
         Some(token) => match cmd::resolve_source_ref(paths, token) {
             Ok(url) => {
-                Some(caly_backends::subscription::subscription_id_for_url(&url).into_bytes())
+                Some(caly_subscription::subscription_id_for_url(&url).into_bytes())
             }
             Err(error) => {
                 let leaf = format!("set sub refresh {token}");

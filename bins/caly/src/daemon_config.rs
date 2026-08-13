@@ -8,7 +8,8 @@
 
 use std::{net::SocketAddr, path::PathBuf};
 
-use caly_composition::{CoreBinaryPaths, RuntimeTuning};
+use caly_composition::RuntimeTuning;
+use caly_platform::paths::CoreBinaryPaths;
 use caly_dns::DnsSettings;
 use caly_domain::{Controllers, CoreKind, TunConfig};
 use caly_profile::schema::AppConfig;

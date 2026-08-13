@@ -17,16 +17,13 @@ layer = 5
 [dependencies]
 caly-domain.workspace = true
 caly-dns.workspace = true
-caly-backends.workspace = true
 caly-corectl.workspace = true
 caly-profile.workspace = true
 caly-subscription.workspace = true
 percent-encoding.workspace = true
 caly-platform.workspace = true
-# P8a 过渡态:caly-backends/composition 仍在用(见 docs/refactor-p8-design.md
-# §1.3 偷渡面),P8b 缝合后删除。caly-application/caly-server 零使用,
-# P8a 出生时即不声明(thin-client 边界的第一道闸)。
-caly-composition.workspace = true
+# P8b:composition/backends 边已缝合(CoreBinaryPaths 下移 platform,
+# desktop 读面上移),见 docs/refactor-p8-design.md §1.3。
 caly-protocol.workspace = true
 crossterm.workspace = true
 tokio.workspace = true
@@ -42,10 +39,6 @@ url.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serde_norway.workspace = true
-
-# P8a 过渡态:依赖面照搬 bins/caly,含 caly-backends/composition/
-# server/application 等 P8b/P8c 将按边界禁令收紧的项(见
-# docs/refactor-p8-design.md §2 与 §5)。
 
 [dev-dependencies]
 base64.workspace = true

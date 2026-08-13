@@ -37,7 +37,7 @@ impl DaemonAssembly {
         core_override: Option<caly_domain::CoreKind>,
         tun: Option<caly_domain::TunConfig>,
         controllers: caly_domain::Controllers,
-        binaries: caly_composition::CoreBinaryPaths,
+        binaries: caly_platform::paths::CoreBinaryPaths,
         subscription_urls: Vec<String>,
         tuning: caly_composition::RuntimeTuning,
     ) -> Result<Self, CompositionError> {

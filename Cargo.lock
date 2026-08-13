@@ -182,8 +182,6 @@ name = "caly-cli"
 version = "0.1.0"
 dependencies = [
  "base64",
- "caly-backends",
- "caly-composition",
  "caly-corectl",
  "caly-dns",
  "caly-domain",

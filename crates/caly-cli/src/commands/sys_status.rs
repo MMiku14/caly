@@ -21,7 +21,7 @@
 
 use std::process::ExitCode;
 
-use caly_backends::platform::LinuxSystemProxyBackend;
+use caly_platform::desktop::{capture_proxy_state, detect_desktop_mode};
 use caly_platform::paths::AppPaths;
 use caly_profile::schema::{AppConfig, SystemProxyConfig};
 
@@ -93,10 +93,12 @@ pub fn run_sysproxy(options: &crate::cli::CliOptions) -> ExitCode {
 /// unusable backend degrades to `("unknown", "")`; the status view must
 /// never fail because desktop tooling is missing.
 fn desktop_proxy_state(host: &str, port: u16) -> (String, String) {
-    match LinuxSystemProxyBackend::new(host.to_owned(), port) {
-        Ok(mut backend) => backend.capture_original_state(),
-        Err(_) => ("unknown".to_owned(), String::new()),
+    // P8b: the read side lives in caly-platform::desktop — the same
+    // capture surface the daemon uses before engagement.
+    if host.is_empty() || port == 0 {
+        return ("unknown".to_owned(), String::new());
     }
+    capture_proxy_state(detect_desktop_mode())
 }
 
 /// Compares declared intent, the live desktop state, and the recovery

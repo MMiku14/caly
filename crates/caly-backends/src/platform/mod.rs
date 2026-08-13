@@ -1,45 +1,11 @@
 //! Linux desktop system-proxy backend (GNOME / KDE Plasma / niri).
 
 use caly_domain::{BoundedText, PlatformEffectView};
+use caly_platform::desktop::{capture_proxy_state, detect_desktop_mode, DesktopProxyMode};
 use caly_platform::command::{
     CommandArguments, CommandRequest, CommandResult, CommandRunner, LinuxCommandRunner,
 };
 use caly_ports::{ActorFailure, PlatformCommandBackend};
-
-/// Supported Linux desktop proxy backends.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum DesktopProxyMode {
-    /// GNOME / GNOME-based desktops via `gsettings`.
-    Gnome,
-    /// KDE Plasma via `kwriteconfig5`/`kwriteconfig6` writing `kioslaverc`.
-    Kde,
-    /// niri (Wayland compositor) via user `environment.d` proxy variables.
-    Niri,
-    /// A desktop with no supported system-proxy mechanism.
-    Unsupported,
-}
-
-/// Detects the current desktop proxy mode from the session environment.
-pub fn detect_desktop_mode() -> DesktopProxyMode {
-    let desktop = std::env::var("XDG_CURRENT_DESKTOP")
-        .or_else(|_| std::env::var("DESKTOP_SESSION"))
-        .unwrap_or_default()
-        .to_lowercase();
-    classify_desktop(&desktop)
-}
-
-/// Pure classification of a lowercased desktop/session identifier.
-fn classify_desktop(desktop: &str) -> DesktopProxyMode {
-    if desktop.contains("gnome") {
-        DesktopProxyMode::Gnome
-    } else if desktop.contains("kde") || desktop.contains("plasma") {
-        DesktopProxyMode::Kde
-    } else if desktop.contains("niri") {
-        DesktopProxyMode::Niri
-    } else {
-        DesktopProxyMode::Unsupported
-    }
-}
 
 /// Linux desktop system-proxy backend using shell-free bounded commands.
 pub struct LinuxSystemProxyBackend {
@@ -137,12 +103,9 @@ impl LinuxSystemProxyBackend {
     /// engagement. Best-effort: unreadable state degrades to `("none", "")`,
     /// which restores as a disabled proxy, never blocking engagement.
     pub fn capture_original_state(&mut self) -> (String, String) {
-        match self.mode {
-            DesktopProxyMode::Gnome => gnome::capture(&mut self.runner),
-            DesktopProxyMode::Kde => kde::capture(&mut self.runner),
-            DesktopProxyMode::Niri => niri::capture(),
-            DesktopProxyMode::Unsupported => ("none".to_owned(), String::new()),
-        }
+        // P8b: read side lives in caly-platform::desktop (single source of
+        // truth for both the daemon capture and the CLI's offline view).
+        capture_proxy_state(self.mode)
     }
 
     /// Restores a previously captured desktop proxy state. `manual` with an
@@ -237,16 +200,5 @@ pub type PlatformBackend = DurableSystemProxyBackend<LinuxSystemProxyBackend>;
 mod tests {
     use super::*;
 
-    #[test]
-    fn detects_known_desktops_from_session() {
-        assert_eq!(classify_desktop("gnome"), DesktopProxyMode::Gnome);
-        assert_eq!(classify_desktop("kde"), DesktopProxyMode::Kde);
-        assert_eq!(classify_desktop("niri"), DesktopProxyMode::Niri);
-        assert_eq!(classify_desktop("sway"), DesktopProxyMode::Unsupported);
-    }
 
-    #[test]
-    fn desktop_mode_survives_mixed_case() {
-        assert_eq!(classify_desktop("plasma"), DesktopProxyMode::Kde);
-    }
 }

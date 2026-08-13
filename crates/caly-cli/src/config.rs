@@ -14,7 +14,7 @@
 
 use std::{fmt, path::PathBuf};
 
-use caly_composition::CoreBinaryPaths;
+use caly_platform::paths::CoreBinaryPaths;
 use caly_domain::{Controllers, CoreKind};
 use caly_platform::paths::{AppPaths, SafeName};
 use caly_platform::tun::TunEscalation;

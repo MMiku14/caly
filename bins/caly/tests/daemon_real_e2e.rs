@@ -135,12 +135,10 @@ fn real_daemon_lifecycle_for_pinned_kernels() -> Result<(), String> {
         eprintln!("skipping: pinned Mihomo/sing-box binaries are unavailable");
         return Ok(());
     }
-    let mihomo_port = alloc_port()?;
     let mihomo_runtime = unique_runtime("mihomo");
-    run_core(&root, "mihomo", &mihomo, mihomo_port, &mihomo_runtime)?;
-    let sing_port = alloc_port()?;
+    run_core(&root, "mihomo", &mihomo, &mihomo_runtime)?;
     let sing_runtime = unique_runtime("sing-box");
-    run_core(&root, "sing-box", &sing_box, sing_port, &sing_runtime)
+    run_core(&root, "sing-box", &sing_box, &sing_runtime)
 }
 
 /// The owner-only UDS socket path the daemon binds under an XDG runtime root.
@@ -148,8 +146,25 @@ fn socket_path(runtime: &Path) -> PathBuf {
     runtime.join("caly").join("daemon.sock")
 }
 
-fn run_core(
-    _root: &Path,
+fn run_core(_root: &Path, core: &str, binary: &Path, runtime: &Path) -> Result<(), String> {
+    // `alloc_port` binds-and-releases, so another process can grab the port
+    // in the window before the daemon's kernel binds it (observed in the
+    // wild: controller readiness timeout). Retry the whole launch on a fresh
+    // port instead of trusting the "practically impossible" assumption.
+    for attempt in 1..=3 {
+        let controller_port = alloc_port()?;
+        match run_core_once(core, binary, controller_port, runtime) {
+            Ok(()) => return Ok(()),
+            Err(error) if attempt < 3 && error.contains("did not become ready") => {
+                eprintln!("port {controller_port} contested (attempt {attempt}/3); retrying");
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    unreachable!("loop always returns")
+}
+
+fn run_core_once(
     core: &str,
     binary: &Path,
     controller_port: u16,
